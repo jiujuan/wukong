@@ -1,0 +1,41 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"
+
+db:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "postgres"
+  database: "wukong_agents_db"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 300
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 10
+
+jwt:
+  secret: "wukong-secret-key-change-in-production"
+  expire_hours: 2
+
+log:
+  level: "info"
+  format: "json"
+
+llm:
+  base_url: "https://api.deepseek.com/v1"
+  api_key: "sk-xxxxxxxxxx"
+  model: "deepseek-chat"
+  timeout: 60
+
+worker:
+  count: 8
+  queue_size: 1000
+  idle_timeout: 60
+  max_retries: 3
