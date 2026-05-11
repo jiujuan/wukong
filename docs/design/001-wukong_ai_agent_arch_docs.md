@@ -22,7 +22,7 @@ Application Service
 Agent Orchestration
   - Manager / Planner / StateMachine / Queue / AsyncDB Writer
 
-Execution Runtime
+Agent Execution Runtime
   - WorkerPool / SubTaskExecutor / ReActExecutor
 
 Capability Layer

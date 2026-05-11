@@ -46,7 +46,7 @@ export function TasksPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [taskPrompt, setTaskPrompt] = useState('')
-  const [taskSkill, setTaskSkill] = useState('general')
+  const [taskSkill, setTaskSkill] = useState('')
   const [taskPriority, setTaskPriority] = useState(5)
   const [taskResult, setTaskResult] = useState<string>('')
   const [statusTrace, setStatusTrace] = useState<TraceItem[]>([])
@@ -61,6 +61,8 @@ export function TasksPage() {
   const updateTaskStatus = useAppStore((state) => state.updateTaskStatus)
   const loadTasks = useAppStore((state) => state.loadTasks)
   const createTask = useAppStore((state) => state.createTask)
+  const skills = useAppStore((state) => state.skills)
+  const loadSkills = useAppStore((state) => state.loadSkills)
 
   const selectedTaskId = routeTaskId ?? currentTaskId
   const currentTask = tasks.find((item) => item.taskId === selectedTaskId)
@@ -79,6 +81,10 @@ export function TasksPage() {
   useEffect(() => {
     loadTasks().catch((error: Error) => toast.error(error.message))
   }, [loadTasks])
+
+  useEffect(() => {
+    loadSkills().catch((error: Error) => toast.error(error.message))
+  }, [loadSkills])
 
   useEffect(() => {
     if (!routeTaskId) {
@@ -240,14 +246,10 @@ export function TasksPage() {
       toast.warning('请输入任务描述')
       return
     }
-    if (!taskSkill.trim()) {
-      toast.warning('请输入技能名')
-      return
-    }
     setCreating(true)
     try {
       const created = await createTask({
-        skillName: taskSkill.trim(),
+        skillName: taskSkill.trim() || 'general',
         priority: taskPriority,
         params: { prompt: taskPrompt.trim() },
       })
@@ -333,6 +335,7 @@ export function TasksPage() {
         <TaskSheet
           open={sheetOpen}
           creating={creating}
+          skills={skills}
           taskSkill={taskSkill}
           taskPriority={taskPriority}
           taskPrompt={taskPrompt}
@@ -603,6 +606,7 @@ function EmptyTable({ colSpan, children }: { colSpan: number; children: ReactNod
 function TaskSheet({
   open,
   creating,
+  skills,
   taskSkill,
   taskPriority,
   taskPrompt,
@@ -614,6 +618,7 @@ function TaskSheet({
 }: {
   open: boolean
   creating: boolean
+  skills: ReturnType<typeof useAppStore.getState>['skills']
   taskSkill: string
   taskPriority: number
   taskPrompt: string
@@ -627,8 +632,22 @@ function TaskSheet({
     <Sheet open={open} onClose={onClose} title="提交任务执行">
       <div className="space-y-4">
         <div className="space-y-2">
-          <div className="text-sm font-medium text-zinc-700">技能名</div>
-          <Input value={taskSkill} onChange={(event) => setTaskSkill(event.target.value)} />
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-medium text-zinc-700">Skills</div>
+            <div className="text-xs text-zinc-400">Optional</div>
+          </div>
+          <select
+            value={taskSkill}
+            onChange={(event) => setTaskSkill(event.target.value)}
+            className="flex h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+          >
+            <option value="">Do not specify (use default)</option>
+            {skills.map((skill) => (
+              <option key={skill.name} value={skill.name}>
+                {skill.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="space-y-2">
           <div className="text-sm font-medium text-zinc-700">优先级 (1-10)</div>
