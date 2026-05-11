@@ -320,11 +320,49 @@ export const api = {
       const row = item as Record<string, unknown>
       return {
         name: pick(row, ['name', 'skillName', 'skill_name'], `skill-${idx}`),
+        description: pick<string | undefined>(row, ['description'], undefined),
         version: pick(row, ['version'], 'v1'),
         enabled: Boolean(pick(row, ['enabled'], true)),
         memoryType: pick<string | undefined>(row, ['memoryType', 'memory_type'], undefined),
         windowSize: pick<number | undefined>(row, ['windowSize', 'window_size'], undefined),
+        memoryCompress: Boolean(pick(row, ['memoryCompress', 'memory_compress'], false)),
       }
+    })
+  },
+  async skillDetail(skillName: string): Promise<SkillItem> {
+    const raw = await request<Record<string, unknown>>(
+      `/api/v1/skill/detail?skill_name=${encodeURIComponent(skillName)}`,
+    )
+    return {
+      name: pick(raw, ['name', 'skillName', 'skill_name'], skillName),
+      description: pick<string | undefined>(raw, ['description'], undefined),
+      version: pick(raw, ['version'], 'v1'),
+      enabled: Boolean(pick(raw, ['enabled'], true)),
+      memoryType: pick<string | undefined>(raw, ['memoryType', 'memory_type'], undefined),
+      windowSize: pick<number | undefined>(raw, ['memoryWindow', 'memory_window'], undefined),
+      memoryCompress: Boolean(pick(raw, ['memoryCompress', 'memory_compress'], false)),
+    }
+  },
+  async updateSkill(input: {
+    skillName: string
+    description?: string
+    version: string
+    enabled: boolean
+    memoryType?: string
+    memoryWindow?: number
+    memoryCompress?: boolean
+  }): Promise<void> {
+    await request('/api/v1/skill/update', {
+      method: 'POST',
+      body: JSON.stringify({
+        skill_name: input.skillName,
+        description: input.description ?? '',
+        version: input.version,
+        enabled: input.enabled,
+        memory_type: input.memoryType ?? '',
+        memory_window: input.memoryWindow ?? 0,
+        memory_compress: input.memoryCompress ?? false,
+      }),
     })
   },
   async listTools(): Promise<ToolItem[]> {

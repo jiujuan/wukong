@@ -4,7 +4,7 @@ import { AppShell } from '@/app/layout/app_shell'
 import { LoginPage } from '@/features/auth/login_page'
 import { ChatPage } from '@/features/chat/chat_page'
 import { MemoryDetailPage, MemoryPage } from '@/features/memory/memory_page'
-import { SkillsPage } from '@/features/skills/skills_page'
+import { SkillEditorPage, SkillsPage } from '@/features/skills/skills_page'
 import { TasksPage } from '@/features/tasks/tasks_page'
 import { useBootstrap } from '@/hooks/use_bootstrap'
 import { useAuthStore } from '@/store/use_auth_store'
@@ -28,6 +28,7 @@ export function AppRouter() {
           <Route path="/memory" element={<MemoryPage />} />
           <Route path="/memory/:taskId" element={<MemoryDetailPage />} />
           <Route path="/skills" element={<SkillsPage />} />
+          <Route path="/skills/:skillName" element={<SkillEditorPage />} />
         </Route>
       </Routes>
     </>

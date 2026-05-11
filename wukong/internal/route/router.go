@@ -117,6 +117,8 @@ func (r *Router) InitRouter() *gin.Engine {
 			skill := api.Group("/skill")
 			{
 				skill.GET("/list", r.skillHandler.ListSkills)
+				skill.GET("/detail", r.skillHandler.Detail)
+				skill.POST("/update", r.skillHandler.UpdateSkill)
 			}
 
 			toolGroup := api.Group("/tool")

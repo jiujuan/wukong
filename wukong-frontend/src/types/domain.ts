@@ -74,10 +74,12 @@ export type LongMemory = {
 
 export type SkillItem = {
   name: string
+  description?: string
   version: string
   enabled: boolean
   memoryType?: string
   windowSize?: number
+  memoryCompress?: boolean
 }
 
 export type ToolItem = {

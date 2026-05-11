@@ -26,6 +26,8 @@ type TaskService interface {
 
 type SkillService interface {
 	ListSkills(ctx context.Context) ([]*model.SkillMeta, error)
+	GetSkill(ctx context.Context, skillName string) (*model.SkillMeta, error)
+	UpdateSkill(ctx context.Context, item *model.SkillMeta) error
 }
 
 type ToolService interface {
