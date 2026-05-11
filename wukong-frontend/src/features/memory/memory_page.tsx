@@ -18,11 +18,10 @@ export function MemoryPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [pages, setPages] = useState(1)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let alive = true
-    setLoading(true)
     api
       .listTasksPage({ page, size: PAGE_SIZE })
       .then((result) => {
@@ -118,7 +117,10 @@ export function MemoryPage() {
               size="sm"
               className="rounded-xl border-zinc-200 bg-zinc-100 text-zinc-700 shadow-none hover:bg-zinc-200"
               disabled={page <= 1 || loading}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              onClick={() => {
+                setLoading(true)
+                setPage((current) => Math.max(1, current - 1))
+              }}
             >
               上一页
             </Button>
@@ -127,7 +129,10 @@ export function MemoryPage() {
               size="sm"
               className="rounded-xl border-zinc-200 bg-zinc-100 text-zinc-700 shadow-none hover:bg-zinc-200"
               disabled={page >= pages || loading}
-              onClick={() => setPage((current) => Math.min(pages, current + 1))}
+              onClick={() => {
+                setLoading(true)
+                setPage((current) => Math.min(pages, current + 1))
+              }}
             >
               下一页
             </Button>
