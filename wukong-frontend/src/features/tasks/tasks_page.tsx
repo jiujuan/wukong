@@ -469,19 +469,19 @@ export function TasksPage() {
           </Card>
 
           <Card className="overflow-hidden">
+            <SectionTitle icon={TerminalSquare} title="最终结果" description="聚合后的任务输出" />
+            <div className="max-h-[260px] overflow-auto border-t border-zinc-100 bg-zinc-50 p-4 text-sm leading-6 whitespace-pre-wrap text-zinc-700">
+              {taskResult || '等待执行结果...'}
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden">
             <SectionTitle icon={GitBranch} title="子任务 DAG" description="规划与依赖关系" />
             <div className="h-[320px] border-t border-zinc-100 bg-white">
               <ReactFlow nodes={nodes} edges={edges} fitView>
                 <Background color="#e4e4e7" gap={16} />
                 <Controls showInteractive={false} />
               </ReactFlow>
-            </div>
-          </Card>
-
-          <Card className="overflow-hidden">
-            <SectionTitle icon={TerminalSquare} title="最终结果" description="聚合后的任务输出" />
-            <div className="max-h-[260px] overflow-auto border-t border-zinc-100 bg-zinc-50 p-4 text-sm leading-6 whitespace-pre-wrap text-zinc-700">
-              {taskResult || '等待执行结果...'}
             </div>
           </Card>
         </div>
