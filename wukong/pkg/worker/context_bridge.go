@@ -7,8 +7,8 @@ import (
 
 	ctxengine "github.com/jiujuan/wukong/pkg/context"
 	"github.com/jiujuan/wukong/pkg/llm"
-	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
+	"github.com/jiujuan/wukong/pkg/promptbuilder"
 	"github.com/jiujuan/wukong/pkg/skills"
 )
 
@@ -61,21 +61,21 @@ func newWorkerContextEngine(registry *skills.Registry) *ctxengine.Engine {
 
 type workerSceneAssembler struct{}
 
-func newWorkerMessageBuilder(contextEngine *ctxengine.Engine, promptEngine *prompt.Engine) *messagebuilder.Builder {
-	builder := messagebuilder.New(contextEngine, promptEngine)
+func newWorkerPromptBuilder(contextEngine *ctxengine.Engine, promptEngine *prompt.Engine) *promptbuilder.Builder {
+	builder := promptbuilder.New(contextEngine, promptEngine)
 	builder.BindSceneTemplate(workerSceneName, prompt.TemplateWorkerActionDefault)
 	builder.RegisterAssembler(workerSceneName, workerSceneAssembler{})
 	return builder
 }
 
-func (a workerSceneAssembler) BuildPromptInput(req messagebuilder.BuildRequest, bundle *ctxengine.ContextBundle) prompt.RenderInput {
+func (a workerSceneAssembler) BuildPromptInput(req promptbuilder.BuildRequest, bundle *ctxengine.ContextBundle) prompt.RenderInput {
 	return prompt.RenderInput{
 		Variables: req.Variables,
 		Context:   workerPromptContext(bundle),
 	}
 }
 
-func (a workerSceneAssembler) Assemble(req messagebuilder.BuildRequest, bundle *ctxengine.ContextBundle, promptMessages []llm.Message) ([]llm.Message, error) {
+func (a workerSceneAssembler) Assemble(req promptbuilder.BuildRequest, bundle *ctxengine.ContextBundle, promptMessages []llm.Message) ([]llm.Message, error) {
 	return append([]llm.Message(nil), promptMessages...), nil
 }
 

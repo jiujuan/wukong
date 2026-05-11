@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/jiujuan/wukong/pkg/llm"
-	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
+	"github.com/jiujuan/wukong/pkg/promptbuilder"
 	"github.com/jiujuan/wukong/pkg/queue"
 	"github.com/jiujuan/wukong/pkg/skills"
 	"github.com/jiujuan/wukong/pkg/tool"
@@ -49,7 +49,7 @@ type PromptBuilder interface {
 //
 // 第二层再把 subtask 基础字段和 params 派生字段灌入 PromptEngine。
 type ActionPromptBuilder struct {
-	builder     *messagebuilder.Builder
+	builder     *promptbuilder.Builder
 	templateKey map[string]string
 }
 
@@ -61,7 +61,7 @@ func NewActionPromptBuilderWithRegistry(skillRegistry *skills.Registry) *ActionP
 	promptEngine := prompt.NewDefaultEngine()
 	contextEngine := newWorkerContextEngine(skillRegistry)
 	return &ActionPromptBuilder{
-		builder: newWorkerMessageBuilder(contextEngine, promptEngine),
+		builder: newWorkerPromptBuilder(contextEngine, promptEngine),
 		templateKey: map[string]string{
 			"web_search": prompt.TemplateWorkerActionSearch,
 			"report_gen": prompt.TemplateWorkerActionReport,
@@ -71,7 +71,7 @@ func NewActionPromptBuilderWithRegistry(skillRegistry *skills.Registry) *ActionP
 
 func (b *ActionPromptBuilder) BuildMessages(ctx context.Context, subTask executableSubTask) ([]llm.Message, error) {
 	if b == nil || b.builder == nil {
-		return nil, fmt.Errorf("message builder is nil")
+		return nil, fmt.Errorf("prompt builder is nil")
 	}
 
 	// 统一把 params 先序列化成 JSON 字符串，便于模板直接使用。
@@ -100,7 +100,7 @@ func (b *ActionPromptBuilder) BuildMessages(ctx context.Context, subTask executa
 	if strings.TrimSpace(topic) == "" {
 		topic = "未指定主题"
 	}
-	result, err := b.builder.BuildMessages(ctx, messagebuilder.BuildRequest{
+	result, err := b.builder.BuildMessages(ctx, promptbuilder.BuildRequest{
 		Scene:       workerSceneName,
 		TemplateKey: templateKey,
 		Context:     buildWorkerContextRequest(subTask),

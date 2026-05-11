@@ -11,8 +11,8 @@ import (
 	ctxengine "github.com/jiujuan/wukong/pkg/context"
 	"github.com/jiujuan/wukong/pkg/errors"
 	"github.com/jiujuan/wukong/pkg/llm"
-	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
+	"github.com/jiujuan/wukong/pkg/promptbuilder"
 	"github.com/jiujuan/wukong/pkg/uuid"
 )
 
@@ -37,24 +37,24 @@ type chatStreamer interface {
 }
 
 type ChatService struct {
-	repo           chatRepository
-	llmProvider    chatLLM
-	streamService  *StreamService
-	promptEngine   *prompt.Engine
-	contextEngine  *ctxengine.Engine
-	messageBuilder *messagebuilder.Builder
+	repo          chatRepository
+	llmProvider   chatLLM
+	streamService *StreamService
+	promptEngine  *prompt.Engine
+	contextEngine *ctxengine.Engine
+	promptBuilder *promptbuilder.Builder
 }
 
 func NewChatService(repo chatRepository, llmProvider *llm.Provider, streamService *StreamService) *ChatService {
 	promptEngine := prompt.NewDefaultEngine()
 	contextEngine := newChatContextEngine(repo)
 	return &ChatService{
-		repo:           repo,
-		llmProvider:    llmProvider,
-		streamService:  streamService,
-		promptEngine:   promptEngine,
-		contextEngine:  contextEngine,
-		messageBuilder: newChatMessageBuilder(contextEngine, promptEngine),
+		repo:          repo,
+		llmProvider:   llmProvider,
+		streamService: streamService,
+		promptEngine:  promptEngine,
+		contextEngine: contextEngine,
+		promptBuilder: newChatPromptBuilder(contextEngine, promptEngine),
 	}
 }
 
@@ -206,7 +206,7 @@ const (
 
 func (s *ChatService) buildLLMMessages(ctx context.Context, userID, sessionID, currentMsgID, content string) []llm.Message {
 	s.ensureEngines()
-	result, err := s.messageBuilder.BuildMessages(ctx, messagebuilder.BuildRequest{
+	result, err := s.promptBuilder.BuildMessages(ctx, promptbuilder.BuildRequest{
 		Scene: chatSceneName,
 		Context: ctxengine.BuildRequest{
 			Scene:     chatSceneName,
@@ -238,8 +238,8 @@ func (s *ChatService) ensureEngines() {
 	if s.contextEngine == nil {
 		s.contextEngine = newChatContextEngine(s.repo)
 	}
-	if s.messageBuilder == nil {
-		s.messageBuilder = newChatMessageBuilder(s.contextEngine, s.promptEngine)
+	if s.promptBuilder == nil {
+		s.promptBuilder = newChatPromptBuilder(s.contextEngine, s.promptEngine)
 	}
 }
 

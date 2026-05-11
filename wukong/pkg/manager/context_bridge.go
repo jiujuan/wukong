@@ -6,8 +6,8 @@ import (
 
 	ctxengine "github.com/jiujuan/wukong/pkg/context"
 	"github.com/jiujuan/wukong/pkg/llm"
-	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
+	"github.com/jiujuan/wukong/pkg/promptbuilder"
 )
 
 const plannerSceneName = "planner"
@@ -25,21 +25,21 @@ func newPlannerContextEngine(loader ctxengine.SkillSpecLoader) *ctxengine.Engine
 
 type plannerSceneAssembler struct{}
 
-func newPlannerMessageBuilder(contextEngine *ctxengine.Engine, promptEngine *prompt.Engine) *messagebuilder.Builder {
-	builder := messagebuilder.New(contextEngine, promptEngine)
+func newPlannerPromptBuilder(contextEngine *ctxengine.Engine, promptEngine *prompt.Engine) *promptbuilder.Builder {
+	builder := promptbuilder.New(contextEngine, promptEngine)
 	builder.BindSceneTemplate(plannerSceneName, prompt.TemplatePlannerTaskDefault)
 	builder.RegisterAssembler(plannerSceneName, plannerSceneAssembler{})
 	return builder
 }
 
-func (a plannerSceneAssembler) BuildPromptInput(req messagebuilder.BuildRequest, bundle *ctxengine.ContextBundle) prompt.RenderInput {
+func (a plannerSceneAssembler) BuildPromptInput(req promptbuilder.BuildRequest, bundle *ctxengine.ContextBundle) prompt.RenderInput {
 	return prompt.RenderInput{
 		Variables: req.Variables,
 		Context:   plannerPromptContext(bundle),
 	}
 }
 
-func (a plannerSceneAssembler) Assemble(req messagebuilder.BuildRequest, bundle *ctxengine.ContextBundle, promptMessages []llm.Message) ([]llm.Message, error) {
+func (a plannerSceneAssembler) Assemble(req promptbuilder.BuildRequest, bundle *ctxengine.ContextBundle, promptMessages []llm.Message) ([]llm.Message, error) {
 	return append([]llm.Message(nil), promptMessages...), nil
 }
 

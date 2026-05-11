@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/jiujuan/wukong/pkg/llm"
-	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
+	"github.com/jiujuan/wukong/pkg/promptbuilder"
 	"github.com/jiujuan/wukong/pkg/skills"
 	"github.com/jiujuan/wukong/pkg/tool"
 )
@@ -35,12 +35,12 @@ type reactLLMReply struct {
 }
 
 type ReActExecutor struct {
-	provider       *llm.Provider
-	toolManager    *tool.Manager
-	skillRegistry  *skills.Registry
-	logger         *slog.Logger
-	maxIterations  int
-	messageBuilder *messagebuilder.Builder
+	provider      *llm.Provider
+	toolManager   *tool.Manager
+	skillRegistry *skills.Registry
+	logger        *slog.Logger
+	maxIterations int
+	promptBuilder *promptbuilder.Builder
 }
 
 func NewReActExecutor(provider *llm.Provider, toolManager *tool.Manager, skillRegistry *skills.Registry, logger *slog.Logger) *ReActExecutor {
@@ -48,12 +48,12 @@ func NewReActExecutor(provider *llm.Provider, toolManager *tool.Manager, skillRe
 		logger = slog.Default()
 	}
 	return &ReActExecutor{
-		provider:       provider,
-		toolManager:    toolManager,
-		skillRegistry:  skillRegistry,
-		logger:         logger,
-		maxIterations:  6,
-		messageBuilder: newWorkerMessageBuilder(newWorkerContextEngine(skillRegistry), prompt.NewDefaultEngine()),
+		provider:      provider,
+		toolManager:   toolManager,
+		skillRegistry: skillRegistry,
+		logger:        logger,
+		maxIterations: 6,
+		promptBuilder: newWorkerPromptBuilder(newWorkerContextEngine(skillRegistry), prompt.NewDefaultEngine()),
 	}
 }
 
@@ -72,7 +72,7 @@ func (e *ReActExecutor) Execute(ctx context.Context, subTask executableSubTask) 
 	}
 
 	paramsJSON, _ := json.Marshal(params)
-	result, err := e.messageBuilder.BuildMessages(ctx, messagebuilder.BuildRequest{
+	result, err := e.promptBuilder.BuildMessages(ctx, promptbuilder.BuildRequest{
 		Scene:       workerSceneName,
 		TemplateKey: prompt.TemplateWorkerReactDefault,
 		Context:     buildWorkerContextRequest(subTask),

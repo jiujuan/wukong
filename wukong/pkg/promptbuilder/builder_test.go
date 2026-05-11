@@ -1,4 +1,4 @@
-package messagebuilder
+package promptbuilder
 
 import (
 	stdctx "context"

@@ -10,7 +10,7 @@
 - 梳理主任务、子任务、DAG、执行回调、结果聚合的完整链路
 - 说明模板规划器、LLM 规划器、子任务执行器、ReAct 执行器各自所在位置
 - 找出当前架构中可继续收敛和解耦的点
-- 为后续 `PromptEngine / ContextEngine / MessageBuilder` 接入提供结构参考
+- 为后续 `PromptEngine / ContextEngine / PromptBuilder` 接入提供结构参考
 
 ---
 
@@ -829,11 +829,11 @@ type SubTaskDef struct {
 
 ---
 
-## 8.6 引入 MessageBuilder 作为 manager / worker 的共同消息构建入口
+## 8.6 引入 PromptBuilder 作为 manager / worker 的共同消息构建入口
 
 推荐新增：
 
-- `pkg/messagebuilder/`
+- `pkg/promptbuilder/`
 
 由它统一完成：
 
@@ -944,7 +944,7 @@ type TaskPersistence interface {
 ### 第三阶段：结构升级
 
 1. 接入 `ContextEngine`
-2. 增加 `MessageBuilder`
+2. 增加 `PromptBuilder`
 3. 引入 runtime task model
 
 ### 第四阶段：远期能力

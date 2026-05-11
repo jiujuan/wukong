@@ -6,20 +6,20 @@ import (
 
 	ctxengine "github.com/jiujuan/wukong/pkg/context"
 	"github.com/jiujuan/wukong/pkg/llm"
-	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
+	"github.com/jiujuan/wukong/pkg/promptbuilder"
 )
 
 type chatSceneAssembler struct{}
 
-func newChatMessageBuilder(contextEngine *ctxengine.Engine, promptEngine *prompt.Engine) *messagebuilder.Builder {
-	builder := messagebuilder.New(contextEngine, promptEngine)
+func newChatPromptBuilder(contextEngine *ctxengine.Engine, promptEngine *prompt.Engine) *promptbuilder.Builder {
+	builder := promptbuilder.New(contextEngine, promptEngine)
 	builder.BindSceneTemplate(chatSceneName, prompt.TemplateChatSessionDefault)
 	builder.RegisterAssembler(chatSceneName, chatSceneAssembler{})
 	return builder
 }
 
-func (a chatSceneAssembler) BuildPromptInput(req messagebuilder.BuildRequest, bundle *ctxengine.ContextBundle) prompt.RenderInput {
+func (a chatSceneAssembler) BuildPromptInput(req promptbuilder.BuildRequest, bundle *ctxengine.ContextBundle) prompt.RenderInput {
 	currentUserMessage := strings.TrimSpace(stringifyChatValue(req.Variables["current_user_message"]))
 	if currentUserMessage == "" {
 		currentUserMessage = strings.TrimSpace(req.Context.Query)
@@ -32,7 +32,7 @@ func (a chatSceneAssembler) BuildPromptInput(req messagebuilder.BuildRequest, bu
 	}
 }
 
-func (a chatSceneAssembler) Assemble(req messagebuilder.BuildRequest, bundle *ctxengine.ContextBundle, promptMessages []llm.Message) ([]llm.Message, error) {
+func (a chatSceneAssembler) Assemble(req promptbuilder.BuildRequest, bundle *ctxengine.ContextBundle, promptMessages []llm.Message) ([]llm.Message, error) {
 	if len(promptMessages) == 0 {
 		return nil, nil
 	}

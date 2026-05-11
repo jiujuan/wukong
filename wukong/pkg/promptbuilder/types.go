@@ -1,4 +1,4 @@
-package messagebuilder
+package promptbuilder
 
 import (
 	wkcontext "github.com/jiujuan/wukong/pkg/context"

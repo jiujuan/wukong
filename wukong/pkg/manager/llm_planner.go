@@ -8,18 +8,18 @@ import (
 
 	ctxengine "github.com/jiujuan/wukong/pkg/context"
 	"github.com/jiujuan/wukong/pkg/llm"
-	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
+	"github.com/jiujuan/wukong/pkg/promptbuilder"
 	"github.com/jiujuan/wukong/pkg/skills"
 	"github.com/jiujuan/wukong/pkg/statemachine"
 )
 
 type LLMPlanner struct {
-	provider       *llm.Provider
-	fallback       TaskPlanner
-	promptEngine   *prompt.Engine
-	contextEngine  *ctxengine.Engine
-	messageBuilder *messagebuilder.Builder
+	provider      *llm.Provider
+	fallback      TaskPlanner
+	promptEngine  *prompt.Engine
+	contextEngine *ctxengine.Engine
+	promptBuilder *promptbuilder.Builder
 }
 
 func NewLLMPlanner(provider *llm.Provider, fallback TaskPlanner) *LLMPlanner {
@@ -33,11 +33,11 @@ func NewLLMPlannerWithRegistry(provider *llm.Provider, fallback TaskPlanner, reg
 	promptEngine := prompt.NewDefaultEngine()
 	contextEngine := newPlannerContextEngine(&registrySkillSpecLoader{registry: registry})
 	return &LLMPlanner{
-		provider:       provider,
-		fallback:       fallback,
-		promptEngine:   promptEngine,
-		contextEngine:  contextEngine,
-		messageBuilder: newPlannerMessageBuilder(contextEngine, promptEngine),
+		provider:      provider,
+		fallback:      fallback,
+		promptEngine:  promptEngine,
+		contextEngine: contextEngine,
+		promptBuilder: newPlannerPromptBuilder(contextEngine, promptEngine),
 	}
 }
 
@@ -86,7 +86,7 @@ func (p *LLMPlanner) PlanSubTasks(ctx context.Context, task *Task) ([]SubTaskDef
 
 func (p *LLMPlanner) planByLLM(ctx context.Context, task *Task) (*llmPlanPayload, error) {
 	paramsJSON, _ := json.Marshal(task.Params)
-	buildResult, err := p.messageBuilder.BuildMessages(ctx, messagebuilder.BuildRequest{
+	buildResult, err := p.promptBuilder.BuildMessages(ctx, promptbuilder.BuildRequest{
 		Scene:       plannerSceneName,
 		TemplateKey: prompt.TemplatePlannerTaskDefault,
 		Context:     buildPlannerContextRequest(task),

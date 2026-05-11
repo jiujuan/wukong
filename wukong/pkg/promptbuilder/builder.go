@@ -1,4 +1,4 @@
-package messagebuilder
+package promptbuilder
 
 import (
 	stdctx "context"
@@ -72,7 +72,7 @@ func (b *Builder) RegisterAssembler(scene string, assembler SceneAssembler) {
 
 func (b *Builder) BuildMessages(ctx stdctx.Context, req BuildRequest) (*BuildResult, error) {
 	if b == nil {
-		return nil, fmt.Errorf("message builder is nil")
+		return nil, fmt.Errorf("prompt builder is nil")
 	}
 	if b.promptEngine == nil {
 		return nil, fmt.Errorf("prompt engine is nil")
