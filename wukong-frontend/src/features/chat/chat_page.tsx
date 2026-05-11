@@ -39,7 +39,6 @@ export function ChatPage() {
 
   useEffect(() => {
     if (!currentSessionId) {
-      setIsResponding(false)
       stopTyping()
       return
     }
@@ -50,8 +49,8 @@ export function ChatPage() {
 
   useEffect(() => {
     if (!currentSessionId) {
-      setIsResponding(false)
       stopTyping()
+      queueMicrotask(() => setIsResponding(false))
       return
     }
     const close = createSSE(
