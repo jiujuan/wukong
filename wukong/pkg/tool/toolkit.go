@@ -90,6 +90,7 @@ type Manager struct {
 	skillsRegistry *skills.Registry
 	memoryStore    MemoryStore
 	baseDir        string
+	fileWriteDir   string
 	httpClient     *http.Client
 	execTimeout    time.Duration
 }
@@ -130,6 +131,14 @@ func WithBaseDir(baseDir string) Option {
 	}
 }
 
+func WithFileWriteDir(dir string) Option {
+	return func(m *Manager) {
+		if strings.TrimSpace(dir) != "" {
+			m.fileWriteDir = dir
+		}
+	}
+}
+
 func WithHTTPClient(client *http.Client) Option {
 	return func(m *Manager) {
 		if client != nil {
@@ -148,10 +157,11 @@ func WithExecTimeout(timeout time.Duration) Option {
 
 func NewManager(opts ...Option) *Manager {
 	m := &Manager{
-		tools:       make(map[string]Tool),
-		logger:      pkglogger.FromSlog(slog.Default()),
-		memoryStore: NewInMemoryStore(),
-		baseDir:     ".",
+		tools:        make(map[string]Tool),
+		logger:       pkglogger.FromSlog(slog.Default()),
+		memoryStore:  NewInMemoryStore(),
+		baseDir:      ".",
+		fileWriteDir: "storage/output_data",
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -163,6 +173,7 @@ func NewManager(opts ...Option) *Manager {
 	m.registerBuiltins()
 	m.logger.Info("[ToolManager] initialized",
 		"base_dir", m.baseDir,
+		"file_write_dir", m.fileWriteDir,
 		"exec_timeout", m.execTimeout,
 	)
 	return m
@@ -260,7 +271,7 @@ func (m *Manager) registerBuiltins() {
 	m.Register(&LLMTool{provider: m.llmProvider, logger: m.logger})
 	m.Register(&WebSearchTool{client: m.httpClient, logger: m.logger})
 	m.Register(&FileReadTool{baseDir: m.baseDir, logger: m.logger})
-	m.Register(&FileWriteTool{baseDir: m.baseDir, logger: m.logger})
+	m.Register(&FileWriteTool{baseDir: m.fileWriteDir, logger: m.logger, now: time.Now})
 	m.Register(&HTTPTool{client: m.httpClient, logger: m.logger})
 	m.Register(&CodeExecTool{timeout: m.execTimeout, logger: m.logger})
 	m.Register(&MemoryReadTool{store: m.memoryStore, logger: m.logger})
@@ -457,6 +468,7 @@ func (t *FileReadTool) Execute(_ context.Context, params map[string]any) (map[st
 type FileWriteTool struct {
 	baseDir string
 	logger  *pkglogger.Logger
+	now     func() time.Time
 }
 
 func (t *FileWriteTool) Name() string { return "file_write" }
@@ -466,6 +478,12 @@ func (t *FileWriteTool) Description() string { return "写入本地文件内容"
 func (t *FileWriteTool) Execute(_ context.Context, params map[string]any) (map[string]any, error) {
 	path := readString(params, "path")
 	content := readString(params, "content")
+	if t.now == nil {
+		t.now = time.Now
+	}
+	if strings.TrimSpace(path) == "" {
+		path = buildAutoWritePath(params, t.now())
+	}
 	if strings.TrimSpace(path) == "" {
 		t.logger.Warn("[Tool] file_write invalid params: path is empty")
 		return nil, fmt.Errorf("path is required")
@@ -755,6 +773,51 @@ func resolvePath(baseDir, target string) (string, error) {
 		return "", fmt.Errorf("path out of base dir")
 	}
 	return targetAbs, nil
+}
+
+func buildAutoWritePath(params map[string]any, now time.Time) string {
+	title := readString(params, "title", "name", "topic", "subject", "prompt", "query", "input")
+	title = sanitizePathFragment(title)
+	if strings.TrimSpace(title) == "" {
+		title = "untitled"
+	}
+	datePart := now.Format("20060102")
+	timePart := fmt.Sprintf("%02d%02d%02d%06d", now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1000)
+	return filepath.Join(datePart, fmt.Sprintf("%s-%s.md", title, timePart))
+}
+
+func sanitizePathFragment(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(value))
+	lastUnderscore := false
+	for _, r := range value {
+		switch {
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+			lastUnderscore = false
+		case r == ' ':
+			if !lastUnderscore {
+				b.WriteRune('_')
+				lastUnderscore = true
+			}
+		case r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|':
+			if !lastUnderscore {
+				b.WriteRune('_')
+				lastUnderscore = true
+			}
+		default:
+			if r <= 0x1f || r == 0x7f {
+				continue
+			}
+			b.WriteRune(r)
+			lastUnderscore = false
+		}
+	}
+	return strings.Trim(b.String(), "._ ")
 }
 
 func suffixByLanguage(language string) string {

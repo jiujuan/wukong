@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -131,5 +132,27 @@ func TestWithEnv(t *testing.T) {
 	got := cfg.String("server.host", "")
 	if got != "0.0.0.0" {
 		t.Errorf("Config loaded, got %v", got)
+	}
+}
+
+func TestConfigResolvePath(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "dev.yaml")
+	content := []byte("server:\n  host: \"127.0.0.1\"\n")
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("write temp config failed: %v", err)
+	}
+
+	cfg, err := New(WithConfigPath(configPath))
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	if got := cfg.Dir(); got != dir {
+		t.Fatalf("Dir() = %q, want %q", got, dir)
+	}
+
+	want := filepath.Join(dir, "storage", "output_data")
+	if got := cfg.ResolvePath("storage/output_data"); got != want {
+		t.Fatalf("ResolvePath() = %q, want %q", got, want)
 	}
 }
