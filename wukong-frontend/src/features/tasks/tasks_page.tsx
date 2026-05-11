@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
-import { Activity, ArrowLeft, GitBranch, ListTodo, Plus, TerminalSquare } from 'lucide-react'
+import { Activity, ArrowLeft, ArrowRight, GitBranch, ListTodo, Plus, TerminalSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import ReactFlow, {
   Background,
@@ -272,25 +272,62 @@ export function TasksPage() {
     return (
       <div className="flex h-full flex-col gap-5">
         <PageHeader
-          title="任务中心"
-          description="提交可追踪任务，并查看实时执行过程与最终结果"
+          title="Task Center"
+          description="Submit tasks, track live execution, and inspect final results."
           action={
             <Button className="gap-2" onClick={() => setSheetOpen(true)}>
               <Plus className="h-4 w-4" />
-              提交任务
+              Submit Task
             </Button>
           }
         />
         <Card className="min-h-0 flex-1 overflow-hidden">
-          <SectionTitle icon={ListTodo} title="任务列表" description={`${tasks.length} 个任务`} />
-          <div className="min-h-0 space-y-2 overflow-auto p-4 pt-0">
-            {tasks.length === 0 ? (
-              <EmptyState text="暂无任务，请先提交一个任务" />
-            ) : (
-              tasks.map((task) => (
-                <TaskRow key={task.taskId} task={task} onClick={() => navigate(`/tasks/${task.taskId}`)} />
-              ))
-            )}
+          <SectionTitle icon={ListTodo} title="Task List" description={`${tasks.length} tasks`} />
+          <div className="min-h-0 overflow-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100 bg-zinc-50 text-xs font-medium text-zinc-400">
+                  <th className="px-5 py-3 text-left">Task</th>
+                  <th className="px-5 py-3 text-left">Skill</th>
+                  <th className="px-5 py-3 text-left">Status</th>
+                  <th className="px-5 py-3 text-left">View</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.length === 0 ? (
+                  <EmptyTable colSpan={4}>No tasks yet. Submit one to get started.</EmptyTable>
+                ) : (
+                  tasks.map((task) => (
+                    <tr key={task.taskId} className="border-b border-zinc-100 hover:bg-indigo-50/20">
+                      <td className="px-5 py-4">
+                        <button
+                          className="w-full text-left"
+                          onClick={() => navigate(`/tasks/${task.taskId}`)}
+                        >
+                          <div className="font-medium text-zinc-900">{task.title}</div>
+                          <div className="mt-1 text-xs text-zinc-400">{task.taskId}</div>
+                        </button>
+                      </td>
+                      <td className="px-5 py-4 text-zinc-600">{task.skillName ?? "-"}</td>
+                      <td className="px-5 py-4">
+                        <StatusPill status={task.status} />
+                      </td>
+                      <td className="px-5 py-4">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="h-8 gap-1 rounded-xl border-zinc-200 bg-zinc-100 px-3 text-zinc-700 shadow-none hover:bg-zinc-200"
+                          onClick={() => navigate(`/tasks/${task.taskId}`)}
+                        >
+                          View
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </Card>
         <TaskSheet
@@ -308,9 +345,9 @@ export function TasksPage() {
       </div>
     )
   }
-
   return (
     <div className="flex h-full flex-col gap-5">
+  return (
       <PageHeader
         title="任务详情"
         description={selectedTaskId ?? '未选择任务'}
@@ -550,6 +587,16 @@ function EmptyState({ text }: { text: string }) {
     <div className="rounded-xl border border-dashed border-zinc-200 bg-white px-4 py-8 text-center text-sm text-zinc-400">
       {text}
     </div>
+  )
+}
+
+function EmptyTable({ colSpan, children }: { colSpan: number; children: ReactNode }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="px-5 py-8 text-center text-sm text-zinc-400">
+        {children}
+      </td>
+    </tr>
   )
 }
 
