@@ -1060,6 +1060,7 @@ func (m *Manager) persistCreateSubTask(ctx context.Context, subtask *SubTask) er
 	snapshot := cloneSubTask(subtask)
 	return m.asyncWriter.Submit(ctx, asyncdb.Job{
 		Name: "create_subtask",
+		Key:  snapshot.SubTaskID,
 		Run: func(jobCtx context.Context) error {
 			return m.repo.CreateSubTask(jobCtx, snapshot)
 		},
