@@ -1,5 +1,4 @@
 import {
-  Bot,
   Brain,
   ChevronRight,
   Database,
@@ -14,6 +13,7 @@ import type { ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { MemoryDrawer } from '@/features/memory/memory_drawer'
 import { useAuthStore } from '@/store/use_auth_store'
 import { useAppStore } from '@/store/use_app_store'
 
@@ -49,6 +49,7 @@ export function AppShell({ children }: AppShellProps) {
   const setCurrentSession = useAppStore((state) => state.setCurrentSession)
   const createSession = useAppStore((state) => state.createSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
+  const toggleMemory = useAppStore((state) => state.toggleMemory)
   const logout = useAuthStore((state) => state.logout)
 
   const pageTitle =
@@ -224,6 +225,7 @@ export function AppShell({ children }: AppShellProps) {
         </header>
         <div className="min-h-0 flex-1 overflow-auto p-6">{children}</div>
       </main>
+      <MemoryDrawer />
     </div>
   )
 }
