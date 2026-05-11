@@ -6,25 +6,38 @@ import (
 	"fmt"
 	"strings"
 
+	ctxengine "github.com/jiujuan/wukong/pkg/context"
 	"github.com/jiujuan/wukong/pkg/llm"
+	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
+	"github.com/jiujuan/wukong/pkg/skills"
 	"github.com/jiujuan/wukong/pkg/statemachine"
 )
 
 type LLMPlanner struct {
-	provider     *llm.Provider
-	fallback     TaskPlanner
-	promptEngine *prompt.Engine
+	provider       *llm.Provider
+	fallback       TaskPlanner
+	promptEngine   *prompt.Engine
+	contextEngine  *ctxengine.Engine
+	messageBuilder *messagebuilder.Builder
 }
 
 func NewLLMPlanner(provider *llm.Provider, fallback TaskPlanner) *LLMPlanner {
+	return NewLLMPlannerWithRegistry(provider, fallback, nil)
+}
+
+func NewLLMPlannerWithRegistry(provider *llm.Provider, fallback TaskPlanner, registry *skills.Registry) *LLMPlanner {
 	if fallback == nil {
 		fallback = NewTplPlanner()
 	}
+	promptEngine := prompt.NewDefaultEngine()
+	contextEngine := newPlannerContextEngine(&registrySkillSpecLoader{registry: registry})
 	return &LLMPlanner{
-		provider:     provider,
-		fallback:     fallback,
-		promptEngine: prompt.NewDefaultEngine(),
+		provider:       provider,
+		fallback:       fallback,
+		promptEngine:   promptEngine,
+		contextEngine:  contextEngine,
+		messageBuilder: newPlannerMessageBuilder(contextEngine, promptEngine),
 	}
 }
 
@@ -73,7 +86,10 @@ func (p *LLMPlanner) PlanSubTasks(ctx context.Context, task *Task) ([]SubTaskDef
 
 func (p *LLMPlanner) planByLLM(ctx context.Context, task *Task) (*llmPlanPayload, error) {
 	paramsJSON, _ := json.Marshal(task.Params)
-	messages, err := p.promptEngine.Render(prompt.TemplatePlannerTaskDefault, prompt.RenderInput{
+	buildResult, err := p.messageBuilder.BuildMessages(ctx, messagebuilder.BuildRequest{
+		Scene:       plannerSceneName,
+		TemplateKey: prompt.TemplatePlannerTaskDefault,
+		Context:     buildPlannerContextRequest(task),
 		Variables: map[string]any{
 			"task_id":     task.TaskID,
 			"skill_name":  task.SkillName,
@@ -83,7 +99,7 @@ func (p *LLMPlanner) planByLLM(ctx context.Context, task *Task) (*llmPlanPayload
 	if err != nil {
 		return nil, fmt.Errorf("render planner prompt failed: %w", err)
 	}
-	resp, err := p.provider.Chat(ctx, messages)
+	resp, err := p.provider.Chat(ctx, buildResult.Messages)
 	if err != nil {
 		return nil, err
 	}
@@ -91,14 +107,14 @@ func (p *LLMPlanner) planByLLM(ctx context.Context, task *Task) (*llmPlanPayload
 		return nil, fmt.Errorf("empty llm response")
 	}
 	content := sanitizeJSON(resp.Choices[0].Message.Content)
-	result := &llmPlanPayload{}
-	if err := json.Unmarshal([]byte(content), result); err != nil {
+	plan := &llmPlanPayload{}
+	if err := json.Unmarshal([]byte(content), plan); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(result.Thought) != "" {
-		reportPlan(ctx, "THINK", result.Thought)
+	if strings.TrimSpace(plan.Thought) != "" {
+		reportPlan(ctx, "THINK", plan.Thought)
 	}
-	return result, nil
+	return plan, nil
 }
 
 func (p *LLMPlanner) convert(ctx context.Context, task *Task, payload *llmPlanPayload) ([]SubTaskDef, error) {

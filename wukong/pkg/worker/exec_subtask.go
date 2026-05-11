@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jiujuan/wukong/pkg/llm"
+	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
 	"github.com/jiujuan/wukong/pkg/queue"
 	"github.com/jiujuan/wukong/pkg/skills"
@@ -48,13 +49,19 @@ type PromptBuilder interface {
 //
 // 第二层再把 subtask 基础字段和 params 派生字段灌入 PromptEngine。
 type ActionPromptBuilder struct {
-	engine      *prompt.Engine
+	builder     *messagebuilder.Builder
 	templateKey map[string]string
 }
 
 func NewActionPromptBuilder() *ActionPromptBuilder {
+	return NewActionPromptBuilderWithRegistry(nil)
+}
+
+func NewActionPromptBuilderWithRegistry(skillRegistry *skills.Registry) *ActionPromptBuilder {
+	promptEngine := prompt.NewDefaultEngine()
+	contextEngine := newWorkerContextEngine(skillRegistry)
 	return &ActionPromptBuilder{
-		engine: prompt.NewDefaultEngine(),
+		builder: newWorkerMessageBuilder(contextEngine, promptEngine),
 		templateKey: map[string]string{
 			"web_search": prompt.TemplateWorkerActionSearch,
 			"report_gen": prompt.TemplateWorkerActionReport,
@@ -62,9 +69,9 @@ func NewActionPromptBuilder() *ActionPromptBuilder {
 	}
 }
 
-func (b *ActionPromptBuilder) BuildMessages(_ context.Context, subTask executableSubTask) ([]llm.Message, error) {
-	if b == nil || b.engine == nil {
-		return nil, fmt.Errorf("prompt engine is nil")
+func (b *ActionPromptBuilder) BuildMessages(ctx context.Context, subTask executableSubTask) ([]llm.Message, error) {
+	if b == nil || b.builder == nil {
+		return nil, fmt.Errorf("message builder is nil")
 	}
 
 	// 统一把 params 先序列化成 JSON 字符串，便于模板直接使用。
@@ -93,7 +100,10 @@ func (b *ActionPromptBuilder) BuildMessages(_ context.Context, subTask executabl
 	if strings.TrimSpace(topic) == "" {
 		topic = "未指定主题"
 	}
-	return b.engine.Render(templateKey, prompt.RenderInput{
+	result, err := b.builder.BuildMessages(ctx, messagebuilder.BuildRequest{
+		Scene:       workerSceneName,
+		TemplateKey: templateKey,
+		Context:     buildWorkerContextRequest(subTask),
 		Variables: map[string]any{
 			"sub_task_id": subTask.GetSubTaskID(),
 			"task_id":     subTask.GetTaskID(),
@@ -103,6 +113,10 @@ func (b *ActionPromptBuilder) BuildMessages(_ context.Context, subTask executabl
 			"topic":       topic,
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	return result.Messages, nil
 }
 
 // ActionExecutor 表示真正执行某类 action 的策略对象。
@@ -176,6 +190,9 @@ type SubTaskExecutor struct {
 // - 如果 action 有显式注册执行器，则用专用执行器
 // - 否则走 defaultExecutor
 func NewSubTaskExecutor(provider *llm.Provider, logger *slog.Logger, promptBuilder PromptBuilder) *SubTaskExecutor {
+	if promptBuilder == nil {
+		promptBuilder = NewActionPromptBuilder()
+	}
 	defaultExecutor := NewLLMActionExecutor(provider, promptBuilder)
 	actionExecutors := defaultActionExecutors(provider, nil)
 	return &SubTaskExecutor{
@@ -190,6 +207,9 @@ func NewSubTaskExecutor(provider *llm.Provider, logger *slog.Logger, promptBuild
 // 这里让 web_search / report_gen 默认走 reactExecutor，
 // 是因为这两类 action 天然受益于“先思考，再决定是否调工具，再输出”的链路。
 func NewSubTaskExecutorWithTools(provider *llm.Provider, logger *slog.Logger, promptBuilder PromptBuilder, toolManager *tool.Manager, skillRegistry *skills.Registry) *SubTaskExecutor {
+	if promptBuilder == nil {
+		promptBuilder = NewActionPromptBuilderWithRegistry(skillRegistry)
+	}
 	reactExecutor := NewReActExecutor(provider, toolManager, skillRegistry, logger)
 	defaultExecutor := reactExecutor
 	actionExecutors := defaultActionExecutors(provider, toolManager)
@@ -274,7 +294,7 @@ func NewRoutedSubTaskHandler(provider *llm.Provider, logger *slog.Logger) TaskHa
 }
 
 func NewRoutedSubTaskHandlerWithTools(provider *llm.Provider, logger *slog.Logger, toolManager *tool.Manager, skillRegistry *skills.Registry) TaskHandler {
-	executor := NewSubTaskExecutorWithTools(provider, logger, NewActionPromptBuilder(), toolManager, skillRegistry)
+	executor := NewSubTaskExecutorWithTools(provider, logger, NewActionPromptBuilderWithRegistry(skillRegistry), toolManager, skillRegistry)
 	return executor.Handle
 }
 

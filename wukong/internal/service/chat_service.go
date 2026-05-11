@@ -11,6 +11,7 @@ import (
 	ctxengine "github.com/jiujuan/wukong/pkg/context"
 	"github.com/jiujuan/wukong/pkg/errors"
 	"github.com/jiujuan/wukong/pkg/llm"
+	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
 	"github.com/jiujuan/wukong/pkg/uuid"
 )
@@ -36,20 +37,24 @@ type chatStreamer interface {
 }
 
 type ChatService struct {
-	repo          chatRepository
-	llmProvider   chatLLM
-	streamService *StreamService
-	promptEngine  *prompt.Engine
-	contextEngine *ctxengine.Engine
+	repo           chatRepository
+	llmProvider    chatLLM
+	streamService  *StreamService
+	promptEngine   *prompt.Engine
+	contextEngine  *ctxengine.Engine
+	messageBuilder *messagebuilder.Builder
 }
 
 func NewChatService(repo chatRepository, llmProvider *llm.Provider, streamService *StreamService) *ChatService {
+	promptEngine := prompt.NewDefaultEngine()
+	contextEngine := newChatContextEngine(repo)
 	return &ChatService{
-		repo:          repo,
-		llmProvider:   llmProvider,
-		streamService: streamService,
-		promptEngine:  prompt.NewDefaultEngine(),
-		contextEngine: newChatContextEngine(repo),
+		repo:           repo,
+		llmProvider:    llmProvider,
+		streamService:  streamService,
+		promptEngine:   promptEngine,
+		contextEngine:  contextEngine,
+		messageBuilder: newChatMessageBuilder(contextEngine, promptEngine),
 	}
 }
 
@@ -201,43 +206,26 @@ const (
 
 func (s *ChatService) buildLLMMessages(ctx context.Context, userID, sessionID, currentMsgID, content string) []llm.Message {
 	s.ensureEngines()
-
-	bundle, err := s.contextEngine.Build(ctx, ctxengine.BuildRequest{
-		Scene:     chatSceneName,
-		UserID:    userID,
-		SessionID: sessionID,
-		Query:     content,
-		Variables: map[string]any{
-			"current_msg_id": currentMsgID,
-			"history_limit":  chatRecentHistoryLimit + 1,
+	result, err := s.messageBuilder.BuildMessages(ctx, messagebuilder.BuildRequest{
+		Scene: chatSceneName,
+		Context: ctxengine.BuildRequest{
+			Scene:     chatSceneName,
+			UserID:    userID,
+			SessionID: sessionID,
+			Query:     content,
+			Variables: map[string]any{
+				"current_msg_id": currentMsgID,
+				"history_limit":  chatRecentHistoryLimit + 1,
+			},
 		},
-	})
-	if err != nil {
-		return []llm.Message{{Role: "user", Content: strings.TrimSpace(content)}}
-	}
-
-	baseMessages, err := s.promptEngine.Render(prompt.TemplateChatSessionDefault, prompt.RenderInput{
 		Variables: map[string]any{
-			"memory_text":          memoryTextFromBundle(bundle),
 			"current_user_message": strings.TrimSpace(content),
 		},
 	})
-	if err != nil || len(baseMessages) == 0 {
+	if err != nil || result == nil || len(result.Messages) == 0 {
 		return []llm.Message{{Role: "user", Content: strings.TrimSpace(content)}}
 	}
-
-	messages := make([]llm.Message, 0, len(baseMessages)+len(bundle.Blocks))
-	for _, item := range filterPromptMessages(baseMessages[:len(baseMessages)-1]) {
-		messages = append(messages, item)
-	}
-	for _, item := range historyMessagesFromBundle(bundle) {
-		messages = append(messages, llm.Message{Role: item.Role, Content: item.Content})
-	}
-	last := baseMessages[len(baseMessages)-1]
-	if strings.TrimSpace(last.Role) != "" && strings.TrimSpace(last.Content) != "" {
-		messages = append(messages, last)
-	}
-	return messages
+	return result.Messages
 }
 
 func (s *ChatService) ensureEngines() {
@@ -249,6 +237,9 @@ func (s *ChatService) ensureEngines() {
 	}
 	if s.contextEngine == nil {
 		s.contextEngine = newChatContextEngine(s.repo)
+	}
+	if s.messageBuilder == nil {
+		s.messageBuilder = newChatMessageBuilder(s.contextEngine, s.promptEngine)
 	}
 }
 

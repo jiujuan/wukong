@@ -110,4 +110,70 @@ describe('api memory requests', () => {
       }),
     )
   })
+
+  it('posts task creation without changing the API contract', async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          task_id: 'task-1',
+          skill_name: 'web_search',
+          status: 'PENDING',
+        },
+      }),
+    } as Response)
+
+    await api.createTask({
+      skillName: 'web_search',
+      sessionId: 'session-1',
+      params: { query: 'golang' },
+      priority: 7,
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v1/task/create',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          skill_name: 'web_search',
+          session_id: 'session-1',
+          params: { query: 'golang' },
+          priority: 7,
+        }),
+      }),
+    )
+  })
+
+  it('parses task detail response without changing the API contract', async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          task: {
+            task_id: 'task-ctx-1',
+            skill_name: 'web_search',
+            status: 'RUNNING',
+          },
+          subtasks: [
+            {
+              sub_task_id: 'sub-1',
+              action: 'web_search',
+              status: 'PENDING',
+            },
+          ],
+        },
+      }),
+    } as Response)
+
+    const detail = await api.taskDetail('task-ctx-1')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v1/task/detail?task_id=task-ctx-1',
+      expect.anything(),
+    )
+    expect(detail.task.taskId).toBe('task-ctx-1')
+    expect(detail.subTasks[0]?.subTaskId).toBe('sub-1')
+  })
 })

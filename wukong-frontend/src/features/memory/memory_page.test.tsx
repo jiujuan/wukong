@@ -1,20 +1,28 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter } from 'react-router-dom'
 import { MemoryPage } from '@/features/memory/memory_page'
-import type { TaskItem } from '@/types/domain'
 
-type StoreState = {
-  tasks: TaskItem[]
-  loadTasks: ReturnType<typeof vi.fn>
-}
+const apiMocks = vi.hoisted(() => ({
+  listTasksPage: vi.fn(),
+}))
 
-const mockUseAppStore = vi.fn()
 const mockToastError = vi.fn()
+const mockNavigate = vi.fn()
 
-vi.mock('@/store/use_app_store', () => ({
-  useAppStore: (selector: (state: StoreState) => unknown) => mockUseAppStore(selector),
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
+})
+
+vi.mock('@/lib/api', () => ({
+  api: {
+    listTasksPage: apiMocks.listTasksPage,
+  },
 }))
 
 vi.mock('sonner', () => ({
@@ -23,25 +31,16 @@ vi.mock('sonner', () => ({
   },
 }))
 
-function renderWithState(state: StoreState) {
-  mockUseAppStore.mockImplementation((selector: (input: StoreState) => unknown) => selector(state))
-  return render(
-    <MemoryRouter>
-      <MemoryPage />
-    </MemoryRouter>,
-  )
-}
-
 describe('MemoryPage', () => {
   beforeEach(() => {
-    mockUseAppStore.mockReset()
+    apiMocks.listTasksPage.mockReset()
     mockToastError.mockReset()
+    mockNavigate.mockReset()
   })
 
   it('loads tasks and renders the memory task list on mount', async () => {
-    const loadTasks = vi.fn().mockResolvedValue(undefined)
-    renderWithState({
-      tasks: [
+    apiMocks.listTasksPage.mockResolvedValue({
+      list: [
         {
           taskId: 'task-1',
           title: 'Task One',
@@ -49,36 +48,50 @@ describe('MemoryPage', () => {
           skillName: 'planner',
         },
       ],
-      loadTasks,
+      total: 1,
+      pages: 1,
     })
 
-    expect(screen.getAllByText('Task One').length).toBeGreaterThan(0)
-    expect(screen.getByText('planner')).toBeInTheDocument()
-    expect(screen.getByText('RUNNING')).toBeInTheDocument()
+    render(
+      <MemoryRouter>
+        <MemoryPage />
+      </MemoryRouter>,
+    )
 
     await waitFor(() => {
-      expect(loadTasks).toHaveBeenCalledTimes(1)
+      expect(apiMocks.listTasksPage).toHaveBeenCalledWith({ page: 1, size: 20 })
     })
+
+    expect(await screen.findByText('Task One')).toBeInTheDocument()
+    expect(screen.getByText('planner')).toBeInTheDocument()
+    expect(screen.getByText('RUNNING')).toBeInTheDocument()
   })
 
   it('renders an empty list when there are no tasks', async () => {
-    const loadTasks = vi.fn().mockResolvedValue(undefined)
-
-    renderWithState({
-      tasks: [],
-      loadTasks,
+    apiMocks.listTasksPage.mockResolvedValue({
+      list: [],
+      total: 0,
+      pages: 1,
     })
+
+    render(
+      <MemoryRouter>
+        <MemoryPage />
+      </MemoryRouter>,
+    )
 
     await waitFor(() => {
-      expect(loadTasks).toHaveBeenCalledTimes(1)
+      expect(apiMocks.listTasksPage).toHaveBeenCalledTimes(1)
     })
-    expect(screen.getByText('0 records')).toBeInTheDocument()
+
+    expect(await screen.findByText('0 records')).toBeInTheDocument()
+    expect(screen.getByText('暂无任务记录')).toBeInTheDocument()
   })
 
   it('navigates to the memory detail page when the user clicks a task row action', async () => {
     const user = userEvent.setup()
-    const state = {
-      tasks: [
+    apiMocks.listTasksPage.mockResolvedValue({
+      list: [
         {
           taskId: 'task-1',
           title: 'Task One',
@@ -92,21 +105,19 @@ describe('MemoryPage', () => {
           skillName: 'writer',
         },
       ],
-      loadTasks: vi.fn().mockResolvedValue(undefined),
-    }
-    mockUseAppStore.mockImplementation((selector: (input: StoreState) => unknown) => selector(state))
+      total: 2,
+      pages: 1,
+    })
 
     render(
       <MemoryRouter initialEntries={['/memory']}>
-        <Routes>
-          <Route path="/memory" element={<MemoryPage />} />
-          <Route path="/memory/:taskId" element={<div>detail route</div>} />
-        </Routes>
+        <MemoryPage />
       </MemoryRouter>,
     )
 
-    await user.click(screen.getAllByRole('button')[1])
+    const detailButtons = await screen.findAllByRole('button', { name: /详情/i })
+    await user.click(detailButtons[0])
 
-    expect(screen.getByText('detail route')).toBeInTheDocument()
+    expect(mockNavigate).toHaveBeenCalledWith('/memory/task-1')
   })
 })

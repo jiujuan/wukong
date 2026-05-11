@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jiujuan/wukong/pkg/llm"
+	"github.com/jiujuan/wukong/pkg/messagebuilder"
 	"github.com/jiujuan/wukong/pkg/prompt"
 	"github.com/jiujuan/wukong/pkg/skills"
 	"github.com/jiujuan/wukong/pkg/tool"
@@ -34,12 +35,12 @@ type reactLLMReply struct {
 }
 
 type ReActExecutor struct {
-	provider      *llm.Provider
-	toolManager   *tool.Manager
-	skillRegistry *skills.Registry
-	logger        *slog.Logger
-	maxIterations int
-	promptEngine  *prompt.Engine
+	provider       *llm.Provider
+	toolManager    *tool.Manager
+	skillRegistry  *skills.Registry
+	logger         *slog.Logger
+	maxIterations  int
+	messageBuilder *messagebuilder.Builder
 }
 
 func NewReActExecutor(provider *llm.Provider, toolManager *tool.Manager, skillRegistry *skills.Registry, logger *slog.Logger) *ReActExecutor {
@@ -47,12 +48,12 @@ func NewReActExecutor(provider *llm.Provider, toolManager *tool.Manager, skillRe
 		logger = slog.Default()
 	}
 	return &ReActExecutor{
-		provider:      provider,
-		toolManager:   toolManager,
-		skillRegistry: skillRegistry,
-		logger:        logger,
-		maxIterations: 6,
-		promptEngine:  prompt.NewDefaultEngine(),
+		provider:       provider,
+		toolManager:    toolManager,
+		skillRegistry:  skillRegistry,
+		logger:         logger,
+		maxIterations:  6,
+		messageBuilder: newWorkerMessageBuilder(newWorkerContextEngine(skillRegistry), prompt.NewDefaultEngine()),
 	}
 }
 
@@ -71,7 +72,10 @@ func (e *ReActExecutor) Execute(ctx context.Context, subTask executableSubTask) 
 	}
 
 	paramsJSON, _ := json.Marshal(params)
-	messages, err := e.promptEngine.Render(prompt.TemplateWorkerReactDefault, prompt.RenderInput{
+	result, err := e.messageBuilder.BuildMessages(ctx, messagebuilder.BuildRequest{
+		Scene:       workerSceneName,
+		TemplateKey: prompt.TemplateWorkerReactDefault,
+		Context:     buildWorkerContextRequest(subTask),
 		Variables: map[string]any{
 			"skill_name":         skillName,
 			"allowed_tools_json": mustJSON(allowedTools),
@@ -85,6 +89,7 @@ func (e *ReActExecutor) Execute(ctx context.Context, subTask executableSubTask) 
 	if err != nil {
 		return nil, fmt.Errorf("render react prompt failed: %w", err)
 	}
+	messages := result.Messages
 	steps := make([]ReActStep, 0, e.maxIterations)
 
 	for i := 1; i <= e.maxIterations; i++ {
@@ -216,6 +221,10 @@ func buildReActSystemPrompt(skillName string, allowedTools []string) string {
 			"action":             "action",
 			"params_json":        "{}",
 			"tool_name_hint":     "",
+		},
+		Context: map[string]any{
+			"task_state_text": "task_state",
+			"skill_spec_text": "skill_spec",
 		},
 	})
 	if err != nil || len(msgs) == 0 {
