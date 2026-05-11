@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -101,8 +102,14 @@ func TestExecuteWithParams(t *testing.T) {
 		t.Fatalf("mkdir skill dir failed: %v", err)
 	}
 	skillFile := filepath.Join(skillDir, "SKILL.md")
-	psScript := filepath.Join(skillDir, "run.ps1")
-	if err := os.WriteFile(psScript, []byte(`Write-Output "$env:SKILL_NAME|$env:SKILL_PARAMS"`), 0o644); err != nil {
+	scriptName := "run.sh"
+	scriptBody := "#!/usr/bin/env bash\nprintf \"%s|%s\\n\" \"$SKILL_NAME\" \"$SKILL_PARAMS\"\n"
+	if runtime.GOOS == "windows" {
+		scriptName = "run.ps1"
+		scriptBody = `Write-Output "$env:SKILL_NAME|$env:SKILL_PARAMS"`
+	}
+	scriptPath := filepath.Join(skillDir, scriptName)
+	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o644); err != nil {
 		t.Fatalf("write script failed: %v", err)
 	}
 	content := strings.Join([]string{
@@ -112,7 +119,7 @@ func TestExecuteWithParams(t *testing.T) {
 		"## Tools",
 		"- llm_chat",
 		"## Execute",
-		"- run.ps1",
+		"- " + scriptName,
 	}, "\n")
 	if err := os.WriteFile(skillFile, []byte(content), 0o644); err != nil {
 		t.Fatalf("write skill file failed: %v", err)

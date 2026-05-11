@@ -537,7 +537,11 @@ func commandForScript(ctx context.Context, path string, envMap map[string]string
 	case ".sh":
 		cmd = exec.CommandContext(ctx, "bash", path)
 	case ".ps1":
-		cmd = exec.CommandContext(ctx, "powershell", "-ExecutionPolicy", "Bypass", "-File", path)
+		shell, err := findPowerShell()
+		if err != nil {
+			return nil, err
+		}
+		cmd = exec.CommandContext(ctx, shell, "-ExecutionPolicy", "Bypass", "-File", path)
 	default:
 		return nil, fmt.Errorf("unsupported execute script extension: %s", ext)
 	}
@@ -549,4 +553,14 @@ func commandForScript(ctx context.Context, path string, envMap map[string]string
 		cmd.Env = env
 	}
 	return cmd, nil
+}
+
+func findPowerShell() (string, error) {
+	candidates := []string{"pwsh", "powershell"}
+	for _, name := range candidates {
+		if _, err := exec.LookPath(name); err == nil {
+			return name, nil
+		}
+	}
+	return "", fmt.Errorf("powershell runtime not found in PATH: tried %s", strings.Join(candidates, ", "))
 }

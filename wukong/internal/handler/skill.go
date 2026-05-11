@@ -2,16 +2,15 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/jiujuan/wukong/internal/service"
 	"github.com/jiujuan/wukong/pkg/errors"
 	"github.com/jiujuan/wukong/pkg/response"
 )
 
 type SkillHandler struct {
-	skillService *service.SkillService
+	skillService SkillService
 }
 
-func NewSkillHandler(skillService *service.SkillService) *SkillHandler {
+func NewSkillHandler(skillService SkillService) *SkillHandler {
 	return &SkillHandler{skillService: skillService}
 }
 

@@ -3,7 +3,6 @@ package handler
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/jiujuan/wukong/internal/middleware"
-	"github.com/jiujuan/wukong/internal/service"
 	"github.com/jiujuan/wukong/pkg/errors"
 	"github.com/jiujuan/wukong/pkg/response"
 	"github.com/jiujuan/wukong/pkg/uuid"
@@ -11,11 +10,11 @@ import (
 
 // TaskHandler 任务处理器
 type TaskHandler struct {
-	taskService *service.TaskService
+	taskService TaskService
 }
 
 // NewTaskHandler 创建任务处理器
-func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
+func NewTaskHandler(taskService TaskService) *TaskHandler {
 	return &TaskHandler{taskService: taskService}
 }
 
