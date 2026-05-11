@@ -198,7 +198,8 @@ func (s *ChatService) buildLLMMessages(ctx context.Context, userID, sessionID, c
 	messages := make([]llm.Message, 0, 16)
 	messages = append(messages, llm.Message{Role: "system", Content: chatSystemPrompt})
 
-	if memory := s.loadChatMemory(ctx, userID, sessionID); memory != nil {
+	memory := s.loadChatMemory(ctx, userID, sessionID)
+	if memory != nil {
 		if memoryText := renderChatMemory(memory); memoryText != "" {
 			messages = append(messages, llm.Message{Role: "system", Content: memoryText})
 		}
@@ -219,6 +220,8 @@ func (s *ChatService) buildLLMMessages(ctx context.Context, userID, sessionID, c
 			}
 			messages = append(messages, llm.Message{Role: role, Content: msgContent})
 		}
+	} else if memory != nil {
+		messages = append(messages, recentMessagesFromMemory(memory)...)
 	}
 
 	messages = append(messages, llm.Message{Role: "user", Content: strings.TrimSpace(content)})
@@ -296,6 +299,26 @@ func normalizeChatRole(role string) string {
 	}
 }
 
+func recentMessagesFromMemory(memory *model.ChatMemory) []llm.Message {
+	if memory == nil || len(memory.RecentMessages) == 0 {
+		return nil
+	}
+	var recent []chatMemoryMessage
+	if err := json.Unmarshal(memory.RecentMessages, &recent); err != nil {
+		return nil
+	}
+	messages := make([]llm.Message, 0, len(recent))
+	for _, item := range tailMemoryMessages(recent, chatRecentHistoryLimit) {
+		role := normalizeChatRole(item.Role)
+		content := strings.TrimSpace(item.Content)
+		if role == "" || content == "" {
+			continue
+		}
+		messages = append(messages, llm.Message{Role: role, Content: content})
+	}
+	return messages
+}
+
 type chatMemoryMessage struct {
 	Role      string `json:"role"`
 	Content   string `json:"content"`
@@ -371,6 +394,13 @@ func toChatMemoryMessages(list []*model.ChatMessage) []chatMemoryMessage {
 		result = append(result, msg)
 	}
 	return result
+}
+
+func tailMemoryMessages(list []chatMemoryMessage, limit int) []chatMemoryMessage {
+	if limit < 1 || len(list) <= limit {
+		return append([]chatMemoryMessage(nil), list...)
+	}
+	return append([]chatMemoryMessage(nil), list[len(list)-limit:]...)
 }
 
 func mergeChatSummary(existing string, messages []*model.ChatMessage) string {

@@ -16,14 +16,22 @@ import (
 
 type recordingChatLLM struct {
 	messages []llm.Message
+	calls    [][]llm.Message
 	reply    string
+	replies  []string
 }
 
 func (r *recordingChatLLM) Chat(ctx context.Context, messages []llm.Message) (*llm.ChatResponse, error) {
 	r.messages = append([]llm.Message(nil), messages...)
+	r.calls = append(r.calls, append([]llm.Message(nil), messages...))
+	reply := r.reply
+	if len(r.replies) > 0 {
+		reply = r.replies[0]
+		r.replies = r.replies[1:]
+	}
 	return &llm.ChatResponse{
 		Choices: []llm.Choice{{
-			Message: llm.Message{Role: "assistant", Content: r.reply},
+			Message: llm.Message{Role: "assistant", Content: reply},
 		}},
 	}, nil
 }
@@ -33,6 +41,7 @@ type fakeChatRepo struct {
 	messages   map[string][]*model.ChatMessage
 	memories   map[string]*model.ChatMemory
 	memoryErr  error
+	recentErr  error
 	upsertErr  error
 	upsertCall int
 }
@@ -72,6 +81,9 @@ func (r *fakeChatRepo) ListMessages(ctx context.Context, userID, sessionID strin
 }
 
 func (r *fakeChatRepo) ListRecentMessages(ctx context.Context, userID, sessionID string, limit int) ([]*model.ChatMessage, error) {
+	if r.recentErr != nil {
+		return nil, r.recentErr
+	}
 	list := append([]*model.ChatMessage(nil), r.messages[sessionID]...)
 	if limit > 0 && len(list) > limit {
 		list = list[len(list)-limit:]
@@ -167,6 +179,73 @@ func TestChatServiceSendMessageBuildsMultiturnContext(t *testing.T) {
 	}
 	if llmClient.messages[6].Content != "tell me more" {
 		t.Fatalf("current message should be last: %+v", llmClient.messages[6])
+	}
+}
+
+func TestChatServiceKeepsSameSessionContextAcrossTurns(t *testing.T) {
+	repo := newFakeChatRepo()
+	sessionID := "session-same-context"
+	userID := "user-same-context"
+	repo.sessions[sessionID] = &model.ChatSession{SessionID: sessionID, UserID: userID}
+
+	llmClient := &recordingChatLLM{
+		replies: []string{"好的，我记住了。", "你叫悟空范。"},
+	}
+	svc := &ChatService{repo: repo, llmProvider: llmClient}
+
+	if _, err := svc.SendMessage(context.Background(), userID, sessionID, "我叫悟空范", ""); err != nil {
+		t.Fatalf("first turn failed: %v", err)
+	}
+	if _, err := svc.SendMessage(context.Background(), userID, sessionID, "我叫什么", ""); err != nil {
+		t.Fatalf("second turn failed: %v", err)
+	}
+	if len(llmClient.calls) != 2 {
+		t.Fatalf("expected two llm calls, got %d", len(llmClient.calls))
+	}
+
+	secondCall := llmClient.calls[1]
+	if !containsLLMMessage(secondCall, "user", "我叫悟空范") {
+		t.Fatalf("second turn should include previous user message: %+v", secondCall)
+	}
+	if !containsLLMMessage(secondCall, "assistant", "好的，我记住了。") {
+		t.Fatalf("second turn should include previous assistant message: %+v", secondCall)
+	}
+	last := secondCall[len(secondCall)-1]
+	if last.Role != "user" || last.Content != "我叫什么" {
+		t.Fatalf("current user message should be last, got %+v", last)
+	}
+}
+
+func TestChatServiceFallsBackToMemoryRecentMessages(t *testing.T) {
+	repo := newFakeChatRepo()
+	sessionID := "session-memory-fallback"
+	userID := "user-memory-fallback"
+	repo.sessions[sessionID] = &model.ChatSession{SessionID: sessionID, UserID: userID}
+	repo.recentErr = errors.New("recent history unavailable")
+	recent, err := json.Marshal([]chatMemoryMessage{
+		{Role: "user", Content: "我叫悟空范"},
+		{Role: "assistant", Content: "好的，我记住了。"},
+	})
+	if err != nil {
+		t.Fatalf("marshal recent memory failed: %v", err)
+	}
+	repo.memories[sessionID] = &model.ChatMemory{
+		SessionID:      sessionID,
+		UserID:         userID,
+		RecentMessages: recent,
+	}
+
+	llmClient := &recordingChatLLM{reply: "你叫悟空范。"}
+	svc := &ChatService{repo: repo, llmProvider: llmClient}
+
+	if _, err := svc.SendMessage(context.Background(), userID, sessionID, "我叫什么", ""); err != nil {
+		t.Fatalf("send message failed: %v", err)
+	}
+	if !containsLLMMessage(llmClient.messages, "user", "我叫悟空范") {
+		t.Fatalf("memory fallback should include previous user message: %+v", llmClient.messages)
+	}
+	if !containsLLMMessage(llmClient.messages, "assistant", "好的，我记住了。") {
+		t.Fatalf("memory fallback should include previous assistant message: %+v", llmClient.messages)
 	}
 }
 
@@ -301,4 +380,13 @@ func TestChatServiceIgnoresMemoryWriteFailures(t *testing.T) {
 	if msg == nil || msg.Content != "still works" {
 		t.Fatalf("unexpected assistant message: %+v", msg)
 	}
+}
+
+func containsLLMMessage(messages []llm.Message, role, content string) bool {
+	for _, message := range messages {
+		if message.Role == role && message.Content == content {
+			return true
+		}
+	}
+	return false
 }
