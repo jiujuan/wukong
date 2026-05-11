@@ -1,5 +1,5 @@
-import { Bot, Brain, Database, ListTodo, MessageSquarePlus, Trash2 } from 'lucide-react'
 import {
+  Bot,
   Brain,
   ChevronRight,
   Database,
