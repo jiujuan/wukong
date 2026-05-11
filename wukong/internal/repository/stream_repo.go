@@ -9,11 +9,11 @@ import (
 )
 
 type StreamRepository struct {
-	db *dbpkg.DB
+	db repositoryDB
 }
 
 func NewStreamRepository(db *dbpkg.DB) *StreamRepository {
-	return &StreamRepository{db: db}
+	return &StreamRepository{db: wrapRepositoryDB(db)}
 }
 
 func (r *StreamRepository) AppendMessage(ctx context.Context, taskID string, msgType string, content string) (*model.StreamMessage, error) {
@@ -32,7 +32,7 @@ func (r *StreamRepository) AppendMessage(ctx context.Context, taskID string, msg
 		RETURNING id, task_id, msg_type, content, seq, created_at
 	`
 	item := &model.StreamMessage{}
-	err := r.db.Pool().QueryRow(ctx, query, taskID, msgType, content).Scan(
+	err := r.db.QueryRow(ctx, query, taskID, msgType, content).Scan(
 		&item.ID, &item.TaskID, &item.MsgType, &item.Content, &item.Seq, &item.CreatedAt,
 	)
 	if err != nil {

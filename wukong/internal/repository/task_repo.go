@@ -12,11 +12,11 @@ import (
 )
 
 type TaskRepository struct {
-	db *dbpkg.DB
+	db repositoryDB
 }
 
 func NewTaskRepository(db *dbpkg.DB) *TaskRepository {
-	return &TaskRepository{db: db}
+	return &TaskRepository{db: wrapRepositoryDB(db)}
 }
 
 // func (r *TaskRepository) EnsureTaskSubColumns(ctx context.Context) error {
@@ -55,7 +55,7 @@ func (r *TaskRepository) GetTask(ctx context.Context, taskID string) (*manager.T
 		SELECT task_id, user_id, session_id, skill_name, params, status, priority, retry_count, max_retry, created_at, updated_at, result, error
 		FROM task_info WHERE task_id = $1 AND is_deleted = false
 	`
-	row := r.db.Pool().QueryRow(ctx, query, taskID)
+	row := r.db.QueryRow(ctx, query, taskID)
 
 	task := &manager.Task{}
 	var paramsJSON, resultJSON []byte
@@ -184,7 +184,7 @@ func (r *TaskRepository) ListTasks(ctx context.Context, userID, status string, p
 	args = append(args, size, offset)
 
 	var total int64
-	if err := r.db.Pool().QueryRow(ctx, countQuery, args[:len(args)-2]...).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, countQuery, args[:len(args)-2]...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
