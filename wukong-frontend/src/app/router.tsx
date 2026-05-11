@@ -3,7 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from '@/app/layout/app_shell'
 import { LoginPage } from '@/features/auth/login_page'
 import { ChatPage } from '@/features/chat/chat_page'
-import { MemoryPage } from '@/features/memory/memory_page'
+import { MemoryDetailPage, MemoryPage } from '@/features/memory/memory_page'
 import { SkillsPage } from '@/features/skills/skills_page'
 import { TasksPage } from '@/features/tasks/tasks_page'
 import { useBootstrap } from '@/hooks/use_bootstrap'
@@ -26,6 +26,7 @@ export function AppRouter() {
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/tasks/:taskId" element={<TasksPage />} />
           <Route path="/memory" element={<MemoryPage />} />
+          <Route path="/memory/:taskId" element={<MemoryDetailPage />} />
           <Route path="/skills" element={<SkillsPage />} />
         </Route>
       </Routes>

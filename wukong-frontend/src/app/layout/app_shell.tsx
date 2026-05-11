@@ -56,7 +56,12 @@ export function AppShell({ children }: AppShellProps) {
   const logout = useAuthStore((state) => state.logout)
 
   const pageTitle =
-    pageTitles[location.pathname] ?? (location.pathname.startsWith('/tasks') ? '任务详情' : 'Wukong')
+    pageTitles[location.pathname] ??
+    (location.pathname.startsWith('/tasks')
+      ? '任务详情'
+      : location.pathname.startsWith('/memory/')
+        ? '记忆详情'
+        : 'Wukong')
 
   const handleCreateSession = () => {
     createSession()
