@@ -31,7 +31,8 @@ type AppState = {
   updateTaskStatus: (taskId: string, status: TaskItem['status']) => void
   loadSessions: () => Promise<void>
   loadMessages: (sessionId: string) => Promise<void>
-  createSession: () => Promise<ChatSession>
+  createSession: (title?: string) => Promise<ChatSession>
+  updateSessionTitle: (sessionId: string, title: string) => void
   deleteSession: (sessionId: string) => Promise<void>
   createTask: (input: {
     skillName: string
@@ -128,14 +129,21 @@ export const useAppStore = create<AppState>((set) => ({
       },
     }))
   },
-  async createSession() {
-    const session = await api.createSession('新会话')
+  async createSession(title = '新会话') {
+    const session = await api.createSession(title)
     set((state) => ({
       sessions: [session, ...state.sessions],
       currentSessionId: session.sessionId,
       messagesBySession: { ...state.messagesBySession, [session.sessionId]: [] },
     }))
     return session
+  },
+  updateSessionTitle(sessionId, title) {
+    set((state) => ({
+      sessions: state.sessions.map((session) =>
+        session.sessionId === sessionId ? { ...session, title } : session,
+      ),
+    }))
   },
   async deleteSession(sessionId) {
     await api.deleteSession(sessionId)
