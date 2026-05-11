@@ -211,6 +211,10 @@ func (p *Pool) Submit(task *queue.Task) bool {
 		p.logger.Warn("[Pool] Submit called but pool is not running", "task_id", task.TaskID)
 		return false
 	}
+	if state := p.stateMachine.GetState(task.TaskID); state != "" {
+		p.logger.Warn("[Pool] duplicate task submit rejected", "task_id", task.TaskID, "state", state)
+		return false
+	}
 	if p.queue.Size() >= p.maxQueueSize {
 		p.logger.Warn("[Pool] queue full, task rejected",
 			"task_id", task.TaskID, "size", p.queue.Size())
@@ -240,6 +244,10 @@ func (p *Pool) Submit(task *queue.Task) bool {
 func (p *Pool) SubmitDelay(task *queue.Task, delay time.Duration) bool {
 	if !p.running.Load() {
 		p.logger.Warn("[Pool] submit delay called but pool is not running", "task_id", task.TaskID)
+		return false
+	}
+	if state := p.stateMachine.GetState(task.TaskID); state != "" {
+		p.logger.Warn("[Pool] duplicate delayed task submit rejected", "task_id", task.TaskID, "state", state)
 		return false
 	}
 	if p.queue.Size() >= p.maxQueueSize {

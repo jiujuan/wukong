@@ -29,6 +29,10 @@ type chatLLM interface {
 	Chat(ctx context.Context, messages []llm.Message) (*llm.ChatResponse, error)
 }
 
+type chatStreamer interface {
+	StreamChat(ctx context.Context, messages []llm.Message, handler func(chunk string)) error
+}
+
 type ChatService struct {
 	repo          chatRepository
 	llmProvider   chatLLM
@@ -111,14 +115,26 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, sessionID, conten
 	}
 
 	reply := "收到您的消息: " + content
+	streamed := false
 	if s.llmProvider != nil && strings.TrimSpace(skillName) == "" {
 		messages := s.buildLLMMessages(ctx, userID, sessionID, userMsg.MsgID, content)
-		resp, chatErr := s.llmProvider.Chat(ctx, messages)
-		if chatErr != nil {
-			return nil, chatErr
-		}
-		if len(resp.Choices) > 0 {
-			reply = resp.Choices[0].Message.Content
+		if streamer, ok := s.llmProvider.(chatStreamer); ok {
+			streamedReply, chatErr := s.streamChatReply(ctx, sessionID, messages, streamer)
+			if chatErr != nil {
+				return nil, chatErr
+			}
+			if strings.TrimSpace(streamedReply) != "" {
+				reply = streamedReply
+				streamed = true
+			}
+		} else {
+			resp, chatErr := s.llmProvider.Chat(ctx, messages)
+			if chatErr != nil {
+				return nil, chatErr
+			}
+			if len(resp.Choices) > 0 {
+				reply = resp.Choices[0].Message.Content
+			}
 		}
 	}
 
@@ -137,7 +153,9 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, sessionID, conten
 	s.persistChatMemory(ctx, userID, sessionID)
 
 	if s.streamService != nil {
-		_, _ = s.streamService.PublishChat(ctx, sessionID, StreamTypeChunk, reply)
+		if !streamed {
+			_, _ = s.streamService.PublishChat(ctx, sessionID, StreamTypeChunk, reply)
+		}
 		_, _ = s.streamService.PublishChat(ctx, sessionID, StreamTypeFinish, "chat finished")
 	}
 	return assistantMsg, nil
@@ -205,6 +223,26 @@ func (s *ChatService) buildLLMMessages(ctx context.Context, userID, sessionID, c
 
 	messages = append(messages, llm.Message{Role: "user", Content: strings.TrimSpace(content)})
 	return messages
+}
+
+func (s *ChatService) streamChatReply(ctx context.Context, sessionID string, messages []llm.Message, streamer chatStreamer) (string, error) {
+	if s == nil || streamer == nil {
+		return "", nil
+	}
+	var builder strings.Builder
+	err := streamer.StreamChat(ctx, messages, func(chunk string) {
+		if chunk == "" {
+			return
+		}
+		builder.WriteString(chunk)
+		if s.streamService != nil {
+			_, _ = s.streamService.PublishChat(ctx, sessionID, StreamTypeChunk, chunk)
+		}
+	})
+	if err != nil {
+		return "", err
+	}
+	return builder.String(), nil
 }
 
 func (s *ChatService) loadRecentMessages(ctx context.Context, userID, sessionID string, limit int) []*model.ChatMessage {

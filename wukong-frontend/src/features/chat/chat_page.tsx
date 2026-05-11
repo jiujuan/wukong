@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Bot, Send, UserRound } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Bot, Loader2, Send, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -11,6 +11,7 @@ import { useAppStore } from '@/store/use_app_store'
 
 export function ChatPage() {
   const [input, setInput] = useState('')
+  const [isResponding, setIsResponding] = useState(false)
   const typingRef = useRef<number | null>(null)
   const chunkQueueRef = useRef<string[]>([])
   const draftRef = useRef('')
@@ -27,17 +28,30 @@ export function ChatPage() {
     [currentSessionId, messagesBySession],
   )
 
+  const stopTyping = useCallback(() => {
+    chunkQueueRef.current = []
+    draftRef.current = ''
+    if (typingRef.current) {
+      window.clearInterval(typingRef.current)
+      typingRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
     if (!currentSessionId) {
+      setIsResponding(false)
+      stopTyping()
       return
     }
     loadMessages(currentSessionId).catch((error: Error) => {
       toast.error(error.message)
     })
-  }, [currentSessionId, loadMessages])
+  }, [currentSessionId, loadMessages, stopTyping])
 
   useEffect(() => {
     if (!currentSessionId) {
+      setIsResponding(false)
+      stopTyping()
       return
     }
     const close = createSSE(
@@ -48,6 +62,7 @@ export function ChatPage() {
           if (event.content) {
             chunkQueueRef.current.push(event.content)
           }
+          setIsResponding(true)
           if (!typingRef.current) {
             typingRef.current = window.setInterval(() => {
               const queue = chunkQueueRef.current
@@ -75,29 +90,25 @@ export function ChatPage() {
             draftRef.current += chunkQueueRef.current.join('')
             updateLastAssistantMessage(currentSessionId, draftRef.current)
           }
-          chunkQueueRef.current = []
-          if (typingRef.current) {
-            window.clearInterval(typingRef.current)
-            typingRef.current = null
-          }
-          draftRef.current = ''
+          stopTyping()
+          setIsResponding(false)
         }
       },
       () => {
-        toast.warning('对话流已断开，正在等待重连')
+        toast.warning('对话流已断开，正在等待重连。')
+        setIsResponding(false)
+        stopTyping()
       },
     )
     return () => {
       close()
-      if (typingRef.current) {
-        window.clearInterval(typingRef.current)
-        typingRef.current = null
-      }
+      stopTyping()
+      setIsResponding(false)
     }
-  }, [currentSessionId, updateLastAssistantMessage])
+  }, [currentSessionId, stopTyping, updateLastAssistantMessage])
 
   const submit = async () => {
-    if (!input.trim()) {
+    if (!input.trim() || isResponding) {
       return
     }
     let sessionId = currentSessionId
@@ -122,10 +133,13 @@ export function ChatPage() {
       role: 'assistant',
       content: '',
     })
-    draftRef.current = ''
+    stopTyping()
+    setIsResponding(true)
     try {
       await api.sendMessage(sessionId, content)
     } catch (error) {
+      setIsResponding(false)
+      stopTyping()
       toast.error((error as Error).message)
     }
   }
@@ -136,10 +150,10 @@ export function ChatPage() {
         <div className="border-b border-zinc-100 px-5 py-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-zinc-900">晴辰助手</div>
+              <div className="text-sm font-semibold text-zinc-900">晴景助手</div>
               <div className="mt-1 text-xs text-zinc-400">轻量对话模式，实时生成回复</div>
             </div>
-            <div className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-600">
+            <div className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-600">
               Online
             </div>
           </div>
@@ -148,7 +162,7 @@ export function ChatPage() {
           {!currentSessionId ? (
             <div className="flex h-full items-center justify-center">
               <div className="max-w-sm text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-500">
                   <Bot className="h-6 w-6" />
                 </div>
                 <div className="text-base font-semibold text-zinc-900">开始一个新会话</div>
@@ -159,26 +173,43 @@ export function ChatPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {messages.map((message) => {
+              {messages.map((message, index) => {
                 const isUser = message.role === 'user'
+                const isLastAssistant =
+                  !isUser && index === messages.length - 1 && message.content.trim() === ''
+                const showTypingCursor = !isUser && isResponding && index === messages.length - 1
                 return (
                   <div
                     key={message.id}
                     className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
                   >
                     {!isUser ? (
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500">
                         <Bot className="h-5 w-5" />
                       </div>
                     ) : null}
                     <div
                       className={`max-w-[76%] rounded-2xl border px-4 py-3 text-sm leading-6 shadow-sm ${
                         isUser
-                          ? 'border-indigo-600 bg-indigo-600 text-white'
+                          ? 'border-zinc-200 bg-zinc-100 text-zinc-800'
                           : 'border-zinc-200 bg-white text-zinc-800'
                       }`}
                     >
-                      <MarkdownView content={message.content || '...'} />
+                      {isLastAssistant && isResponding ? (
+                        <div className="flex items-center gap-2 text-zinc-400">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>正在生成回复</span>
+                        </div>
+                      ) : (
+                        <div className="min-w-0">
+                          <MarkdownView content={message.content || ''} />
+                          {showTypingCursor ? (
+                            <span className="ml-1 inline-block animate-pulse text-indigo-400">
+                              |
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
                     {isUser ? (
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500">
@@ -206,7 +237,7 @@ export function ChatPage() {
               }
             }}
           />
-          <Button className="h-10 shrink-0 gap-2" onClick={submit}>
+          <Button className="h-10 shrink-0 gap-2" onClick={submit} disabled={isResponding}>
             <Send className="h-4 w-4" />
             发送
           </Button>
