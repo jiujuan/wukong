@@ -9,7 +9,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -54,6 +54,7 @@ export function AppShell({ children }: AppShellProps) {
   const createSession = useAppStore((state) => state.createSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
   const logout = useAuthStore((state) => state.logout)
+  const visibleSessions = useMemo(() => sessions.slice(0, 15), [sessions])
 
   const pageTitle =
     pageTitles[location.pathname] ??
@@ -128,12 +129,12 @@ export function AppShell({ children }: AppShellProps) {
                 </button>
               </div>
               <div className="space-y-2">
-                {sessions.length === 0 ? (
+                {visibleSessions.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-zinc-200 px-3 py-3 text-xs text-zinc-400">
                     暂无会话
                   </div>
                 ) : (
-                  sessions.map((session) => (
+                  visibleSessions.map((session) => (
                     <div
                       key={session.sessionId}
                       className={`group flex items-center gap-2 rounded-xl px-3 py-2 transition-colors ${
@@ -143,7 +144,7 @@ export function AppShell({ children }: AppShellProps) {
                       }`}
                     >
                       <button
-                        className="min-w-0 flex-1 truncate text-left text-sm"
+                        className="min-w-0 flex-1 truncate text-left text-xs leading-5"
                         onClick={() => {
                           setCurrentSession(session.sessionId)
                           navigate('/chat')

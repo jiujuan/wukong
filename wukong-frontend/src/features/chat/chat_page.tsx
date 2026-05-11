@@ -17,11 +17,15 @@ export function ChatPage() {
   const draftRef = useRef('')
 
   const currentSessionId = useAppStore((state) => state.currentSessionId)
+  const currentSession = useAppStore(
+    (state) => state.sessions.find((session) => session.sessionId === state.currentSessionId) ?? null,
+  )
   const messagesBySession = useAppStore((state) => state.messagesBySession)
   const appendMessage = useAppStore((state) => state.appendMessage)
   const updateLastAssistantMessage = useAppStore((state) => state.updateLastAssistantMessage)
   const loadMessages = useAppStore((state) => state.loadMessages)
   const createSession = useAppStore((state) => state.createSession)
+  const updateSessionTitle = useAppStore((state) => state.updateSessionTitle)
 
   const messages = useMemo(
     () => messagesBySession[currentSessionId] ?? [],
@@ -35,6 +39,15 @@ export function ChatPage() {
       window.clearInterval(typingRef.current)
       typingRef.current = null
     }
+  }, [])
+
+  const buildSessionTitle = useCallback((content: string) => {
+    const normalized = content.replace(/\s+/g, ' ').trim()
+    const chars = Array.from(normalized)
+    if (chars.length <= 24) {
+      return normalized || '新会话'
+    }
+    return `${chars.slice(0, 24).join('')}...`
   }, [])
 
   useEffect(() => {
@@ -107,20 +120,24 @@ export function ChatPage() {
   }, [currentSessionId, stopTyping, updateLastAssistantMessage])
 
   const submit = async () => {
-    if (!input.trim() || isResponding) {
+    const content = input.trim()
+    if (!content || isResponding) {
       return
     }
+
     let sessionId = currentSessionId
     if (!sessionId) {
       try {
-        const session = await createSession()
+        const session = await createSession(buildSessionTitle(content))
         sessionId = session.sessionId
       } catch (error) {
         toast.error((error as Error).message)
         return
       }
+    } else if (!currentSession?.title || currentSession.title === '新会话') {
+      updateSessionTitle(sessionId, buildSessionTitle(content))
     }
-    const content = input.trim()
+
     setInput('')
     appendMessage(sessionId, {
       id: crypto.randomUUID(),
