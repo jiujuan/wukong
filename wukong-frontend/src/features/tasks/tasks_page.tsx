@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ComponentType, ReactNode } from 'react'
+import { Activity, ArrowLeft, GitBranch, ListTodo, Plus, TerminalSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import ReactFlow, {
   Background,
@@ -61,6 +63,7 @@ export function TasksPage() {
   const createTask = useAppStore((state) => state.createTask)
 
   const selectedTaskId = routeTaskId ?? currentTaskId
+  const currentTask = tasks.find((item) => item.taskId === selectedTaskId)
   const currentEvents = useMemo(
     () => eventsByTask[selectedTaskId] ?? [],
     [eventsByTask, selectedTaskId],
@@ -134,70 +137,80 @@ export function TasksPage() {
     return () => close()
   }, [appendTaskEvent, loadTasks, selectedTaskId, updateTaskStatus])
 
-  const loadTaskDetail = useCallback(async (taskId: string) => {
-    const detail = await api.taskDetail(taskId)
-    if (detail.task) {
-      upsertTask(detail.task)
-      setStatusTrace((prev) => {
-        const status = normalizeTaskStatus(detail.task?.status ?? '')
-        if (!status) {
-          return prev
+  const loadTaskDetail = useCallback(
+    async (taskId: string) => {
+      const detail = await api.taskDetail(taskId)
+      if (detail.task) {
+        upsertTask(detail.task)
+        setStatusTrace((prev) => {
+          const status = normalizeTaskStatus(detail.task?.status ?? '')
+          if (!status) {
+            return prev
+          }
+          if (prev.some((item) => item.status === status)) {
+            return prev
+          }
+          return [{ status, reason: '任务详情加载', seq: 0 }, ...prev]
+        })
+        if (detail.task.result) {
+          setTaskResult(formatTaskResult(detail.task.result))
+        } else if (detail.task.error) {
+          setTaskResult(detail.task.error)
+        } else {
+          setTaskResult('')
         }
-        if (prev.some((item) => item.status === status)) {
-          return prev
+      }
+      const mapLevel = new Map<string, number>()
+      const byId = new Map(detail.subTasks.map((item) => [item.subTaskId, item]))
+      const levelOf = (id: string): number => {
+        if (mapLevel.has(id)) {
+          return mapLevel.get(id)!
         }
-        return [{ status, reason: '任务详情加载', seq: 0 }, ...prev]
-      })
-      if (detail.task.result) {
-        setTaskResult(formatTaskResult(detail.task.result))
-      } else if (detail.task.error) {
-        setTaskResult(detail.task.error)
-      } else {
-        setTaskResult('')
-      }
-    }
-    const mapLevel = new Map<string, number>()
-    const byId = new Map(detail.subTasks.map((item) => [item.subTaskId, item]))
-    const levelOf = (id: string): number => {
-      if (mapLevel.has(id)) {
-        return mapLevel.get(id)!
-      }
-      const item = byId.get(id)
-      if (!item || item.dependsOn.length === 0) {
-        mapLevel.set(id, 0)
-        return 0
-      }
-      const level = Math.max(...item.dependsOn.map(levelOf)) + 1
-      mapLevel.set(id, level)
-      return level
-    }
-    detail.subTasks.forEach((item) => levelOf(item.subTaskId))
-    const levelCount = new Map<number, number>()
-    setNodes(
-      detail.subTasks.map((item) => {
-        const level = mapLevel.get(item.subTaskId) ?? 0
-        const count = levelCount.get(level) ?? 0
-        levelCount.set(level, count + 1)
-        return {
-          id: item.subTaskId,
-          position: { x: level * 260, y: count * 130 },
-          data: { label: `${item.title} (${item.status})` },
-          type: 'default',
+        const item = byId.get(id)
+        if (!item || item.dependsOn.length === 0) {
+          mapLevel.set(id, 0)
+          return 0
         }
-      }),
-    )
-    setEdges(
-      detail.subTasks.flatMap((item) =>
-        item.dependsOn.map((dep) => ({
-          id: `${dep}-${item.subTaskId}`,
-          source: dep,
-          target: item.subTaskId,
-          markerEnd: { type: MarkerType.ArrowClosed },
-          style: { stroke: '#a3a3a3' },
-        })),
-      ),
-    )
-  }, [upsertTask])
+        const level = Math.max(...item.dependsOn.map(levelOf)) + 1
+        mapLevel.set(id, level)
+        return level
+      }
+      detail.subTasks.forEach((item) => levelOf(item.subTaskId))
+      const levelCount = new Map<number, number>()
+      setNodes(
+        detail.subTasks.map((item) => {
+          const level = mapLevel.get(item.subTaskId) ?? 0
+          const count = levelCount.get(level) ?? 0
+          levelCount.set(level, count + 1)
+          return {
+            id: item.subTaskId,
+            position: { x: level * 260, y: count * 130 },
+            data: { label: `${item.title} (${item.status})` },
+            type: 'default',
+            style: {
+              border: '1px solid #e4e4e7',
+              borderRadius: 12,
+              background: '#ffffff',
+              color: '#27272a',
+              boxShadow: '0 10px 24px rgba(31,36,48,0.06)',
+            },
+          }
+        }),
+      )
+      setEdges(
+        detail.subTasks.flatMap((item) =>
+          item.dependsOn.map((dep) => ({
+            id: `${dep}-${item.subTaskId}`,
+            source: dep,
+            target: item.subTaskId,
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: '#a5b4fc' },
+          })),
+        ),
+      )
+    },
+    [upsertTask],
+  )
 
   useEffect(() => {
     if (!selectedTaskId) {
@@ -249,230 +262,358 @@ export function TasksPage() {
     }
   }
 
-  if (!isDetailPage) {
-    return (
-      <div className="flex h-full flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-xl font-semibold">任务中心</div>
-            <div className="text-sm text-zinc-500">提交任务后可查看实时执行过程与最终结果</div>
-          </div>
-          <Button onClick={() => setSheetOpen(true)}>提交任务</Button>
-        </div>
-        <Card className="flex-1 overflow-auto p-4">
-          <div className="mb-3 text-sm font-semibold text-zinc-700">任务列表</div>
-          <div className="space-y-2">
-            {tasks.length === 0 ? (
-              <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-500">
-                暂无任务，请先提交一个任务
-              </div>
-            ) : (
-              tasks.map((task) => (
-                <button
-                  key={task.taskId}
-                  className="w-full rounded-md border border-zinc-200 bg-white p-3 text-left hover:bg-zinc-50"
-                  onClick={() => navigate(`/tasks/${task.taskId}`)}
-                >
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">{task.title}</div>
-                    <StatusPill status={task.status} />
-                  </div>
-                  <div className="text-xs text-zinc-500">{task.taskId}</div>
-                </button>
-              ))
-            )}
-          </div>
-        </Card>
-        <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="提交任务执行">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-zinc-700">技能名</div>
-              <Input value={taskSkill} onChange={(event) => setTaskSkill(event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-zinc-700">优先级 (1-10)</div>
-              <Input
-                type="number"
-                min={1}
-                max={10}
-                value={taskPriority}
-                onChange={(event) => {
-                  const value = Number(event.target.value)
-                  if (!Number.isFinite(value)) {
-                    return
-                  }
-                  setTaskPriority(Math.max(1, Math.min(10, value)))
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-zinc-700">任务描述</div>
-              <Textarea
-                value={taskPrompt}
-                onChange={(event) => setTaskPrompt(event.target.value)}
-                placeholder="请输入要执行的任务目标和约束"
-              />
-            </div>
-            <div className="flex justify-end">
-              <Button onClick={() => void submitTask()} disabled={creating}>
-                {creating ? '提交中...' : '提交执行'}
-              </Button>
-            </div>
-          </div>
-        </Sheet>
-      </div>
-    )
-  }
-
-  const currentTask = tasks.find((item) => item.taskId === selectedTaskId)
   const cancelDisabled =
     !selectedTaskId ||
     currentTask?.status === 'COMPLETED' ||
     currentTask?.status === 'FAILED' ||
     currentTask?.status === 'CANCELLED'
 
-  return (
-    <div className="flex h-full flex-col gap-4">
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-8">
-        <Card className="p-3">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-semibold text-zinc-900">任务列表</div>
-            <Button variant="secondary" size="sm" onClick={() => navigate('/tasks')}>
-              返回
+  if (!isDetailPage) {
+    return (
+      <div className="flex h-full flex-col gap-5">
+        <PageHeader
+          title="任务中心"
+          description="提交可追踪任务，并查看实时执行过程与最终结果"
+          action={
+            <Button className="gap-2" onClick={() => setSheetOpen(true)}>
+              <Plus className="h-4 w-4" />
+              提交任务
             </Button>
-          </div>
-          <div className="space-y-3">
-            {tasks.map((item) => (
-              <button
-                key={item.taskId}
-                className={`w-full cursor-pointer rounded-md border p-2 text-left text-xs transition-colors ${
-                  item.taskId === selectedTaskId
-                    ? 'border-zinc-400 bg-zinc-100'
-                    : 'border-zinc-200 bg-white hover:bg-zinc-100'
-                }`}
-                onClick={() => navigate(`/tasks/${item.taskId}`)}
-              >
-                <div className="mb-1 flex items-center gap-2">
-                  <StatusPill status={item.status} />
-                  <div className="min-w-0 flex-1 truncate font-medium text-zinc-900">{item.title}</div>
-                </div>
-                <div className="mt-1 text-zinc-500">{item.taskId}</div>
-              </button>
-            ))}
+          }
+        />
+        <Card className="min-h-0 flex-1 overflow-hidden">
+          <SectionTitle icon={ListTodo} title="任务列表" description={`${tasks.length} 个任务`} />
+          <div className="min-h-0 space-y-2 overflow-auto p-4 pt-0">
+            {tasks.length === 0 ? (
+              <EmptyState text="暂无任务，请先提交一个任务" />
+            ) : (
+              tasks.map((task) => (
+                <TaskRow key={task.taskId} task={task} onClick={() => navigate(`/tasks/${task.taskId}`)} />
+              ))
+            )}
           </div>
         </Card>
-        </div>
-        <div className="col-span-4 flex flex-col gap-4">
-          <Card className="p-3">
-            <div className="mb-3 text-sm font-semibold">任务详情</div>
+        <TaskSheet
+          open={sheetOpen}
+          creating={creating}
+          taskSkill={taskSkill}
+          taskPriority={taskPriority}
+          taskPrompt={taskPrompt}
+          setTaskSkill={setTaskSkill}
+          setTaskPriority={setTaskPriority}
+          setTaskPrompt={setTaskPrompt}
+          submitTask={submitTask}
+          onClose={() => setSheetOpen(false)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full flex-col gap-5">
+      <PageHeader
+        title="任务详情"
+        description={selectedTaskId ?? '未选择任务'}
+        action={
+          <div className="flex gap-2">
+            <Button variant="secondary" className="gap-2" onClick={() => navigate('/tasks')}>
+              <ArrowLeft className="h-4 w-4" />
+              返回
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={cancelTask}
+              disabled={cancelDisabled}
+              className="disabled:pointer-events-auto disabled:cursor-not-allowed"
+            >
+              取消任务
+            </Button>
+          </div>
+        }
+      />
+
+      <div className="grid min-h-0 grid-cols-[320px_1fr] gap-5">
+        <div className="min-h-0 space-y-5">
+          <Card className="overflow-hidden">
+            <SectionTitle icon={ListTodo} title="任务列表" description="选择任务查看详情" />
+            <div className="max-h-[360px] space-y-2 overflow-auto p-4 pt-0">
+              {tasks.map((item) => (
+                <TaskRow
+                  key={item.taskId}
+                  task={item}
+                  active={item.taskId === selectedTaskId}
+                  dense
+                  onClick={() => navigate(`/tasks/${item.taskId}`)}
+                />
+              ))}
+            </div>
+          </Card>
+          <Card className="p-4">
+            <div className="mb-3 text-sm font-semibold text-zinc-900">当前任务</div>
             {selectedTaskId ? (
-              <div className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50 p-3">
-                <div className="text-xs text-zinc-500">{selectedTaskId}</div>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-medium text-zinc-900">{currentTask?.title ?? '未命名任务'}</div>
+              <div className="space-y-3 rounded-xl border border-zinc-100 bg-zinc-50 p-3">
+                <div className="break-all text-xs text-zinc-400">{selectedTaskId}</div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 text-sm font-medium text-zinc-900">
+                    {currentTask?.title ?? '未命名任务'}
+                  </div>
                   <StatusPill status={currentTask?.status ?? 'PENDING'} />
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-zinc-500">暂无任务</div>
+              <EmptyState text="暂无任务" />
             )}
           </Card>
-          <Card className="p-3">
-            <div className="mb-2 text-sm font-semibold">状态变化</div>
-            <div className="max-h-[180px] space-y-2 overflow-auto">
+          <Card className="p-4">
+            <div className="mb-3 text-sm font-semibold text-zinc-900">状态变化</div>
+            <div className="max-h-[210px] space-y-2 overflow-auto">
               {statusTrace.length === 0 ? (
-                <div className="text-sm text-zinc-500">暂无状态变化</div>
+                <div className="text-sm text-zinc-400">暂无状态变化</div>
               ) : (
                 statusTrace.map((item, index) => {
                   const next = statusTrace[index + 1]
                   const display = getTraceDisplay(item, next)
                   return (
-                    <div key={`${item.seq}-${item.status}`} className="rounded-md border border-zinc-200 p-2">
+                    <div key={`${item.seq}-${item.status}`} className="rounded-xl border border-zinc-100 bg-zinc-50 p-3">
                       <div className="mb-1 flex items-center gap-2">
                         <StatusPill
                           status={item.status}
                           labelOverride={display.label}
                           completedStyle={display.completed}
                         />
-                        <span className="text-xs text-zinc-500">seq {item.seq}</span>
+                        <span className="text-xs text-zinc-400">seq {item.seq}</span>
                       </div>
-                      {item.reason ? <div className="text-xs text-zinc-600">{item.reason}</div> : null}
+                      {item.reason ? <div className="text-xs text-zinc-500">{item.reason}</div> : null}
                     </div>
                   )
                 })
               )}
             </div>
           </Card>
-          <Button
-            variant="destructive"
-            onClick={cancelTask}
-            disabled={cancelDisabled}
-            className="disabled:pointer-events-auto disabled:cursor-not-allowed"
-          >
-            取消当前任务
+        </div>
+
+        <div className="min-h-0 space-y-5 overflow-auto">
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+                <Activity className="h-4 w-4 text-indigo-500" />
+                实时执行面板
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <FilterBadge active={activeFilter === 'ALL'} onClick={() => setActiveFilter('ALL')}>
+                  ALL
+                </FilterBadge>
+                {streamFilters.map((filter) => (
+                  <FilterBadge
+                    key={filter}
+                    active={activeFilter === filter}
+                    onClick={() => setActiveFilter(filter)}
+                  >
+                    {filter}
+                  </FilterBadge>
+                ))}
+              </div>
+            </div>
+            <div className="h-[300px] space-y-2 overflow-auto bg-zinc-50/60 p-4">
+              {filteredEvents.length === 0 ? (
+                <EmptyState text="等待实时事件" />
+              ) : (
+                filteredEvents.map((event, index) => (
+                  <div key={`${event.seq}-${index}`} className="rounded-xl border border-zinc-100 bg-white p-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <Badge variant="default">{event.msgType}</Badge>
+                      <span className="text-xs text-zinc-400">seq {event.seq}</span>
+                    </div>
+                    <div className="whitespace-pre-wrap text-sm leading-6 text-zinc-700">{event.content}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <SectionTitle icon={GitBranch} title="子任务 DAG" description="规划与依赖关系" />
+            <div className="h-[320px] border-t border-zinc-100 bg-white">
+              <ReactFlow nodes={nodes} edges={edges} fitView>
+                <Background color="#e4e4e7" gap={16} />
+                <Controls showInteractive={false} />
+              </ReactFlow>
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <SectionTitle icon={TerminalSquare} title="最终结果" description="聚合后的任务输出" />
+            <div className="max-h-[260px] overflow-auto border-t border-zinc-100 bg-zinc-50 p-4 text-sm leading-6 whitespace-pre-wrap text-zinc-700">
+              {taskResult || '等待执行结果...'}
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PageHeader({
+  title,
+  description,
+  action,
+}: {
+  title: string
+  description: string
+  action?: ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="min-w-0">
+        <h1 className="text-xl font-semibold text-zinc-900">{title}</h1>
+        <p className="mt-1 truncate text-sm text-zinc-500">{description}</p>
+      </div>
+      {action}
+    </div>
+  )
+}
+
+function SectionTitle({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: ComponentType<{ className?: string }>
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+        <Icon className="h-4 w-4 text-indigo-500" />
+        {title}
+      </div>
+      <div className="text-xs text-zinc-400">{description}</div>
+    </div>
+  )
+}
+
+function TaskRow({
+  task,
+  active = false,
+  dense = false,
+  onClick,
+}: {
+  task: { taskId: string; title: string; status: string; skillName?: string; createdAt?: string }
+  active?: boolean
+  dense?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      className={`w-full rounded-xl border p-3 text-left transition-colors ${
+        active
+          ? 'border-indigo-200 bg-indigo-50'
+          : 'border-zinc-100 bg-white hover:border-indigo-100 hover:bg-indigo-50/40'
+      }`}
+      onClick={onClick}
+    >
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">{task.title}</div>
+        <StatusPill status={task.status} />
+      </div>
+      <div className="flex items-center justify-between gap-3 text-xs text-zinc-400">
+        <span className="min-w-0 truncate">{task.taskId}</span>
+        {!dense ? <span>{task.skillName ?? 'general'}</span> : null}
+      </div>
+    </button>
+  )
+}
+
+function FilterBadge({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <Badge
+      variant={active ? 'default' : 'outline'}
+      className="cursor-pointer transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+      onClick={onClick}
+    >
+      {children}
+    </Badge>
+  )
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-zinc-200 bg-white px-4 py-8 text-center text-sm text-zinc-400">
+      {text}
+    </div>
+  )
+}
+
+function TaskSheet({
+  open,
+  creating,
+  taskSkill,
+  taskPriority,
+  taskPrompt,
+  setTaskSkill,
+  setTaskPriority,
+  setTaskPrompt,
+  submitTask,
+  onClose,
+}: {
+  open: boolean
+  creating: boolean
+  taskSkill: string
+  taskPriority: number
+  taskPrompt: string
+  setTaskSkill: (value: string) => void
+  setTaskPriority: (value: number) => void
+  setTaskPrompt: (value: string) => void
+  submitTask: () => Promise<void>
+  onClose: () => void
+}) {
+  return (
+    <Sheet open={open} onClose={onClose} title="提交任务执行">
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-zinc-700">技能名</div>
+          <Input value={taskSkill} onChange={(event) => setTaskSkill(event.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-zinc-700">优先级 (1-10)</div>
+          <Input
+            type="number"
+            min={1}
+            max={10}
+            value={taskPriority}
+            onChange={(event) => {
+              const value = Number(event.target.value)
+              if (!Number.isFinite(value)) {
+                return
+              }
+              setTaskPriority(Math.max(1, Math.min(10, value)))
+            }}
+          />
+        </div>
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-zinc-700">任务描述</div>
+          <Textarea
+            value={taskPrompt}
+            onChange={(event) => setTaskPrompt(event.target.value)}
+            placeholder="请输入要执行的任务目标和约束"
+          />
+        </div>
+        <div className="flex justify-end">
+          <Button onClick={() => void submitTask()} disabled={creating}>
+            {creating ? '提交中...' : '提交执行'}
           </Button>
         </div>
       </div>
-      <Card className="p-3">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-semibold">实时执行面板</div>
-            <div className="flex flex-wrap gap-2">
-              <Badge
-                variant="outline"
-                className={`cursor-pointer border-zinc-300 transition-colors ${
-                  activeFilter === 'ALL'
-                    ? 'bg-zinc-700 text-white hover:bg-zinc-600'
-                    : 'bg-zinc-200 text-black hover:bg-zinc-300'
-                }`}
-                onClick={() => setActiveFilter('ALL')}
-              >
-                ALL
-              </Badge>
-              {streamFilters.map((filter) => (
-                <Badge
-                  key={filter}
-                  variant="outline"
-                  className={`cursor-pointer border-zinc-300 transition-colors ${
-                    activeFilter === filter
-                      ? 'bg-zinc-700 text-white hover:bg-zinc-600'
-                      : 'bg-zinc-200 text-black hover:bg-zinc-300'
-                  }`}
-                  onClick={() => setActiveFilter(filter)}
-                >
-                  {filter}
-                </Badge>
-              ))}
-            </div>
-          </div>
-          <div className="h-[360px] space-y-2 overflow-auto rounded-md border border-zinc-200 p-2">
-            {filteredEvents.map((event, index) => (
-              <div key={`${event.seq}-${index}`} className="rounded-md bg-zinc-50 p-2">
-                <div className="mb-1 flex items-center gap-2">
-                  <Badge variant="outline">{event.msgType}</Badge>
-                  <span className="text-xs text-zinc-500">seq {event.seq}</span>
-                </div>
-                <div className="text-sm whitespace-pre-wrap text-zinc-900">{event.content}</div>
-              </div>
-            ))}
-          </div>
-      </Card>
-      <Card className="p-2">
-        <div className="mb-2 px-2 text-sm font-semibold">子任务 DAG</div>
-        <div className="h-[320px] rounded-md border border-zinc-200">
-          <ReactFlow nodes={nodes} edges={edges} fitView>
-            <Background color="#d4d4d8" gap={16} />
-            <Controls showInteractive={false} />
-          </ReactFlow>
-        </div>
-      </Card>
-      <Card className="p-3">
-        <div className="mb-2 text-sm font-semibold">最终结果</div>
-        <div className="max-h-[220px] overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-2 text-xs whitespace-pre-wrap text-zinc-800">
-          {taskResult || '等待执行结果...'}
-        </div>
-      </Card>
-    </div>
+    </Sheet>
   )
 }
 

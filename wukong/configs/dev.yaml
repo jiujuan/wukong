@@ -7,7 +7,7 @@ db:
   host: "localhost"
   port: 5432
   user: "postgres"
-  password: "postgres"
+  password: "admin123"
   database: "wukong_agents_db"
   max_open_conns: 25
   max_idle_conns: 5
@@ -16,7 +16,7 @@ db:
 redis:
   host: "localhost"
   port: 6379
-  password: ""
+  password: "foobared"
   db: 0
   pool_size: 10
 
@@ -30,7 +30,7 @@ log:
 
 llm:
   base_url: "https://api.deepseek.com/v1"
-  api_key: "sk-xxxxxxxxxx"
+  api_key: "sk-55df4566022243a597a0ab1d619526a6"
   model: "deepseek-chat"
   timeout: 60
 
