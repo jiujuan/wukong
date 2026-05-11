@@ -6,31 +6,185 @@ import (
 	"time"
 )
 
-// Task 任务结构
+const (
+	minPriority   = 1
+	maxPriority   = 10
+	quadHeapArity = 4
+)
+
+// Task represents a scheduled task in the queue.
 type Task struct {
-	TaskID     string    // 任务ID
-	Priority   int       // 优先级 1-10
-	Status     string    // 状态
-	RetryCount int       // 重试次数
-	ExecuteAt  time.Time // 执行时间
-	CreatedAt  time.Time // 创建时间
-	Data       any       // 任务数据
+	TaskID     string
+	Priority   int
+	Status     string
+	RetryCount int
+	ExecuteAt  time.Time
+	CreatedAt  time.Time
+	Data       any
 }
 
-// Option 函数选项模式
+// Option configures the queue instance.
 type Option func(*Queue)
 
-// Queue 四叉树任务队列
+type queueItem struct {
+	task  *Task
+	order int64
+}
+
+// quadHeap is a min-heap ordered by ExecuteAt and then insertion order.
+type quadHeap struct {
+	items   []*queueItem
+	indices map[string]int
+}
+
+func newQuadHeap() *quadHeap {
+	return &quadHeap{
+		items:   make([]*queueItem, 0),
+		indices: make(map[string]int),
+	}
+}
+
+func (h *quadHeap) len() int {
+	return len(h.items)
+}
+
+func (h *quadHeap) peek() *Task {
+	if len(h.items) == 0 {
+		return nil
+	}
+	return h.items[0].task
+}
+
+func (h *quadHeap) push(task *Task, order int64) {
+	item := &queueItem{task: task, order: order}
+	h.items = append(h.items, item)
+	index := len(h.items) - 1
+	h.indices[task.TaskID] = index
+	h.bubbleUp(index)
+}
+
+func (h *quadHeap) pop() *Task {
+	if len(h.items) == 0 {
+		return nil
+	}
+	return h.removeAt(0)
+}
+
+func (h *quadHeap) remove(taskID string) bool {
+	index, ok := h.indices[taskID]
+	if !ok {
+		return false
+	}
+	h.removeAt(index)
+	return true
+}
+
+func (h *quadHeap) update(task *Task) bool {
+	index, ok := h.indices[task.TaskID]
+	if !ok {
+		return false
+	}
+	h.items[index].task = task
+	h.fix(index)
+	return true
+}
+
+func (h *quadHeap) list() []*Task {
+	out := make([]*Task, len(h.items))
+	for i, item := range h.items {
+		out[i] = item.task
+	}
+	return out
+}
+
+func (h *quadHeap) removeAt(index int) *Task {
+	last := len(h.items) - 1
+	removed := h.items[index]
+
+	if index != last {
+		h.swap(index, last)
+	}
+	delete(h.indices, removed.task.TaskID)
+	h.items[last] = nil
+	h.items = h.items[:last]
+
+	if index < len(h.items) {
+		h.fix(index)
+	}
+
+	return removed.task
+}
+
+func (h *quadHeap) fix(index int) {
+	if index > 0 {
+		parent := (index - 1) / quadHeapArity
+		if h.less(index, parent) {
+			h.bubbleUp(index)
+			return
+		}
+	}
+	h.bubbleDown(index)
+}
+
+func (h *quadHeap) bubbleUp(index int) {
+	for index > 0 {
+		parent := (index - 1) / quadHeapArity
+		if !h.less(index, parent) {
+			return
+		}
+		h.swap(index, parent)
+		index = parent
+	}
+}
+
+func (h *quadHeap) bubbleDown(index int) {
+	for {
+		best := index
+		firstChild := index*quadHeapArity + 1
+		for child := firstChild; child < firstChild+quadHeapArity && child < len(h.items); child++ {
+			if h.less(child, best) {
+				best = child
+			}
+		}
+		if best == index {
+			return
+		}
+		h.swap(index, best)
+		index = best
+	}
+}
+
+func (h *quadHeap) less(i, j int) bool {
+	left := h.items[i]
+	right := h.items[j]
+
+	if left.task.ExecuteAt.Before(right.task.ExecuteAt) {
+		return true
+	}
+	if left.task.ExecuteAt.After(right.task.ExecuteAt) {
+		return false
+	}
+	return left.order < right.order
+}
+
+func (h *quadHeap) swap(i, j int) {
+	h.items[i], h.items[j] = h.items[j], h.items[i]
+	h.indices[h.items[i].task.TaskID] = i
+	h.indices[h.items[j].task.TaskID] = j
+}
+
+// Queue is a priority queue backed by per-priority quaternary heaps.
 type Queue struct {
-	mu       sync.RWMutex
-	tasks    map[string]*Task       // 任务存储
-	priority [11][]*Task             // 按优先级存储 (1-10)
-	size    int                     // 队列大小
+	mu      sync.RWMutex
+	tasks   map[string]*Task
+	heaps   [maxPriority + 1]*quadHeap
+	size    int
+	nextOrd int64
 	ctx     context.Context
 	cancel  context.CancelFunc
 }
 
-// New 创建四叉树队列
+// New creates a new queue.
 func New(opts ...Option) *Queue {
 	q := &Queue{
 		tasks: make(map[string]*Task),
@@ -38,8 +192,8 @@ func New(opts ...Option) *Queue {
 	}
 	q.ctx, q.cancel = context.WithCancel(context.Background())
 
-	for i := range q.priority {
-		q.priority[i] = make([]*Task, 0)
+	for priority := range q.heaps {
+		q.heaps[priority] = newQuadHeap()
 	}
 
 	for _, opt := range opts {
@@ -49,7 +203,7 @@ func New(opts ...Option) *Queue {
 	return q
 }
 
-// WithContext 设置上下文
+// WithContext sets the queue context.
 func WithContext(ctx context.Context) Option {
 	return func(q *Queue) {
 		q.ctx = ctx
@@ -57,73 +211,47 @@ func WithContext(ctx context.Context) Option {
 	}
 }
 
-// Push 入队
+// Push inserts a new task. Duplicate task IDs are rejected.
 func (q *Queue) Push(task *Task) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	// 幂等检查
 	if _, exists := q.tasks[task.TaskID]; exists {
 		return false
 	}
 
-	// 设置默认值
-	if task.Priority < 1 {
-		task.Priority = 1
-	}
-	if task.Priority > 10 {
-		task.Priority = 10
-	}
-	if task.ExecuteAt.IsZero() {
-		task.ExecuteAt = time.Now()
-	}
-	if task.CreatedAt.IsZero() {
-		task.CreatedAt = time.Now()
-	}
-
-	// 存储任务
+	q.normalizeTask(task)
 	q.tasks[task.TaskID] = task
 	q.size++
-
-	// 按优先级插入
-	priority := task.Priority
-	q.priority[priority] = append(q.priority[priority], task)
-
-	// 上移调整
-	q.bubbleUp(priority, len(q.priority[priority])-1)
-
+	q.nextOrd++
+	q.heaps[task.Priority].push(task, q.nextOrd)
 	return true
 }
 
-// Pop 出队（获取最高优先级任务）
+// Pop returns the highest-priority ready task.
 func (q *Queue) Pop() *Task {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	// 从高优先级到低优先级查找
-	for p := 10; p >= 1; p-- {
-		if len(q.priority[p]) == 0 {
+	now := time.Now()
+	for priority := maxPriority; priority >= minPriority; priority-- {
+		task := q.heaps[priority].peek()
+		if task == nil {
 			continue
 		}
-
-		// 获取队首任务
-		task := q.priority[p][0]
-		if task.ExecuteAt.After(time.Now()) {
-			continue // 延时任务，跳过
+		if task.ExecuteAt.After(now) {
+			continue
 		}
-
-		// 移除任务
-		q.removeFromPriority(p, 0)
+		task = q.heaps[priority].pop()
 		delete(q.tasks, task.TaskID)
 		q.size--
-
 		return task
 	}
 
 	return nil
 }
 
-// PopWithTimeout 带超时的出队
+// PopWithTimeout waits for a task until the timeout expires.
 func (q *Queue) PopWithTimeout(timeout time.Duration) (*Task, error) {
 	ctx, cancel := context.WithTimeout(q.ctx, timeout)
 	defer cancel()
@@ -143,20 +271,20 @@ func (q *Queue) PopWithTimeout(timeout time.Duration) (*Task, error) {
 	}
 }
 
-// Peek 查看队首任务
+// Peek returns the current top task for the highest available priority.
 func (q *Queue) Peek() *Task {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 
-	for p := 10; p >= 1; p-- {
-		if len(q.priority[p]) > 0 {
-			return q.priority[p][0]
+	for priority := maxPriority; priority >= minPriority; priority-- {
+		if task := q.heaps[priority].peek(); task != nil {
+			return task
 		}
 	}
 	return nil
 }
 
-// Get 获取任务
+// Get retrieves a task by ID.
 func (q *Queue) Get(taskID string) (*Task, bool) {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
@@ -165,7 +293,7 @@ func (q *Queue) Get(taskID string) (*Task, bool) {
 	return task, ok
 }
 
-// Remove 移除任务
+// Remove deletes a task from the queue.
 func (q *Queue) Remove(taskID string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -175,22 +303,15 @@ func (q *Queue) Remove(taskID string) bool {
 		return false
 	}
 
-	// 从优先级队列移除
-	priority := task.Priority
-	for i, t := range q.priority[priority] {
-		if t.TaskID == taskID {
-			q.removeFromPriority(priority, i)
-			break
-		}
+	if !q.heaps[task.Priority].remove(taskID) {
+		return false
 	}
-
 	delete(q.tasks, taskID)
 	q.size--
-
 	return true
 }
 
-// Update 更新任务
+// Update replaces an existing task and repositions it in the heap when needed.
 func (q *Queue) Update(task *Task) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -200,49 +321,37 @@ func (q *Queue) Update(task *Task) bool {
 		return false
 	}
 
+	q.normalizeTask(task)
 	oldPriority := oldTask.Priority
 	newPriority := task.Priority
-	if newPriority < 1 {
-		newPriority = 1
-	}
-	if newPriority > 10 {
-		newPriority = 10
-	}
 
-	// 如果优先级改变，需要移动
 	if oldPriority != newPriority {
-		// 从旧优先级队列移除
-		for i, t := range q.priority[oldPriority] {
-			if t.TaskID == task.TaskID {
-				q.removeFromPriority(oldPriority, i)
-				break
-			}
+		if !q.heaps[oldPriority].remove(task.TaskID) {
+			return false
 		}
-
-		// 添加到新优先级队列
-		task.Priority = newPriority
-		q.priority[newPriority] = append(q.priority[newPriority], task)
-		q.bubbleUp(newPriority, len(q.priority[newPriority])-1)
+		q.nextOrd++
+		q.heaps[newPriority].push(task, q.nextOrd)
+	} else if !q.heaps[oldPriority].update(task) {
+		return false
 	}
 
 	q.tasks[task.TaskID] = task
-
 	return true
 }
 
-// Size 获取队列大小
+// Size returns the number of queued tasks.
 func (q *Queue) Size() int {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 	return q.size
 }
 
-// IsEmpty 检查队列是否为空
+// IsEmpty reports whether the queue has no tasks.
 func (q *Queue) IsEmpty() bool {
 	return q.Size() == 0
 }
 
-// List 获取所有任务
+// List returns all queued tasks.
 func (q *Queue) List() []*Task {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
@@ -254,88 +363,46 @@ func (q *Queue) List() []*Task {
 	return tasks
 }
 
-// ListByPriority 获取指定优先级的任务
+// ListByPriority returns the heap contents for a priority level.
 func (q *Queue) ListByPriority(priority int) []*Task {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 
-	if priority < 1 || priority > 10 {
+	if priority < minPriority || priority > maxPriority {
 		return nil
 	}
-
-	tasks := make([]*Task, len(q.priority[priority]))
-	copy(tasks, q.priority[priority])
-	return tasks
+	return q.heaps[priority].list()
 }
 
-// Clear 清空队列
+// Clear removes all tasks from the queue.
 func (q *Queue) Clear() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	q.tasks = make(map[string]*Task)
-	for i := range q.priority {
-		q.priority[i] = make([]*Task, 0)
+	for priority := range q.heaps {
+		q.heaps[priority] = newQuadHeap()
 	}
 	q.size = 0
+	q.nextOrd = 0
 }
 
-// Close 关闭队列
+// Close releases the queue context.
 func (q *Queue) Close() {
 	q.cancel()
 }
 
-// bubbleUp 上浮调整
-func (q *Queue) bubbleUp(priority, index int) {
-	heap := q.priority[priority]
-	for index > 0 {
-		parent := (index - 1) / 2
-		if heap[index].ExecuteAt.After(heap[parent].ExecuteAt) {
-			break
-		}
-		heap[index], heap[parent] = heap[parent], heap[index]
-		index = parent
+func (q *Queue) normalizeTask(task *Task) {
+	if task.Priority < minPriority {
+		task.Priority = minPriority
 	}
-}
-
-// removeFromPriority 从优先级队列移除
-func (q *Queue) removeFromPriority(priority, index int) {
-	heap := q.priority[priority]
-	if index < 0 || index >= len(heap) {
-		return
+	if task.Priority > maxPriority {
+		task.Priority = maxPriority
 	}
-
-	// 将最后一个元素移到当前位置
-	last := len(heap) - 1
-	heap[index], heap[last] = heap[last], heap[index]
-	q.priority[priority] = heap[:last]
-
-	// 向下调整
-	q.bubbleDown(priority, index)
-}
-
-// bubbleDown 下沉调整
-func (q *Queue) bubbleDown(priority, index int) {
-	heap := q.priority[priority]
-	length := len(heap)
-
-	for {
-		left := 2*index + 1
-		right := 2*index + 2
-		smallest := index
-
-		if left < length && heap[left].ExecuteAt.Before(heap[smallest].ExecuteAt) {
-			smallest = left
-		}
-		if right < length && heap[right].ExecuteAt.Before(heap[smallest].ExecuteAt) {
-			smallest = right
-		}
-
-		if smallest == index {
-			break
-		}
-
-		heap[index], heap[smallest] = heap[smallest], heap[index]
-		index = smallest
+	if task.ExecuteAt.IsZero() {
+		task.ExecuteAt = time.Now()
+	}
+	if task.CreatedAt.IsZero() {
+		task.CreatedAt = time.Now()
 	}
 }
