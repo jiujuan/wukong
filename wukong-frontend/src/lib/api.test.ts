@@ -80,4 +80,34 @@ describe('api memory requests', () => {
       'http://localhost:8080/api/v1/stream/task?taskId=task-1&mode=live',
     )
   })
+
+  it('posts chat messages without changing the API contract', async () => {
+    const fetchMock = vi.mocked(fetch)
+    setAuthToken('token-chat')
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          msg_id: 'msg-1',
+          session_id: 'session-1',
+          content: 'reply',
+          role: 'assistant',
+        },
+      }),
+    } as Response)
+
+    await api.sendMessage('session-1', 'hello context')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v1/chat/message/send',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 'session-1', content: 'hello context' }),
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer token-chat',
+        }),
+      }),
+    )
+  })
 })
