@@ -191,6 +191,9 @@ func TestActionPromptBuilderBuildMessages(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("unexpected message count: %d", len(msgs))
 	}
+	if msgs[0].Role != "system" || msgs[1].Role != "user" {
+		t.Fatalf("unexpected message roles: %#v", msgs)
+	}
 	if !strings.Contains(msgs[1].Content, "sub-1") || !strings.Contains(msgs[1].Content, "golang") {
 		t.Fatalf("user prompt missing key fields: %q", msgs[1].Content)
 	}
@@ -228,6 +231,9 @@ func TestLLMActionExecutorExecute(t *testing.T) {
 	}
 	if len(script.requests) != 1 || len(script.requests[0].Messages) != 2 {
 		t.Fatalf("unexpected request payload: %#v", script.requests)
+	}
+	if script.requests[0].Messages[0].Content != "ctx" || script.requests[0].Messages[1].Content != "prompt" {
+		t.Fatalf("request should use prompt builder output, got %#v", script.requests[0].Messages)
 	}
 }
 

@@ -179,7 +179,7 @@ func main() {
 	engine := gin.New()
 
 	// 初始化路由
-	router := route.NewRouter(engine, jwtTool, llmProvider, mgr, skillRegistry, memoryManager, streamService, db)
+	router := route.NewRouter(engine, jwtTool, llmProvider, mgr, skillRegistry, toolManager, memoryManager, streamService, db)
 	router.InitRouter()
 
 	// 启动服务

@@ -1,21 +1,47 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { BookOpen, CheckCircle2, Clock3, Database, FolderKanban, ArrowRight } from 'lucide-react'
+import { ArrowRight, BookOpen, CheckCircle2, Clock3, Database, FolderKanban } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { api } from '@/lib/api'
 import { useAppStore } from '@/store/use_app_store'
+import type { TaskItem } from '@/types/domain'
+
+const PAGE_SIZE = 20
 
 export function MemoryPage() {
-  const tasks = useAppStore((state) => state.tasks)
-  const loadTasks = useAppStore((state) => state.loadTasks)
   const navigate = useNavigate()
+  const [tasks, setTasks] = useState<TaskItem[]>([])
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [pages, setPages] = useState(1)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadTasks().catch((error: Error) => toast.error(error.message))
-  }, [loadTasks])
+    let alive = true
+    api
+      .listTasksPage({ page, size: PAGE_SIZE })
+      .then((result) => {
+        if (!alive) {
+          return
+        }
+        setTasks(result.list)
+        setTotal(result.total)
+        setPages(result.pages || 1)
+      })
+      .catch((error: Error) => toast.error(error.message))
+      .finally(() => {
+        if (alive) {
+          setLoading(false)
+        }
+      })
+    return () => {
+      alive = false
+    }
+  }, [page])
 
   return (
     <div className="flex h-full flex-col gap-5">
@@ -25,13 +51,17 @@ export function MemoryPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        <SummaryCard icon={FolderKanban} label="任务数量" value={String(tasks.length)} />
+        <SummaryCard icon={FolderKanban} label="任务数量" value={String(total)} />
         <SummaryCard icon={Clock3} label="短期记忆" value="-" />
         <SummaryCard icon={BookOpen} label="长期记忆" value="-" />
       </div>
 
       <Card className="min-h-0 flex-1 overflow-hidden">
-        <SectionHeader icon={Database} title="记忆列表" meta={`${tasks.length} records`} />
+        <SectionHeader
+          icon={Database}
+          title="记忆列表"
+          meta={`${total} records`}
+        />
         <div className="overflow-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -43,7 +73,9 @@ export function MemoryPage() {
               </tr>
             </thead>
             <tbody>
-              {tasks.length ? (
+              {loading ? (
+                <EmptyTable colSpan={4}>加载中...</EmptyTable>
+              ) : tasks.length ? (
                 tasks.map((task) => (
                   <tr key={task.taskId} className="border-b border-zinc-100 hover:bg-indigo-50/20">
                     <td className="px-5 py-4">
@@ -74,6 +106,37 @@ export function MemoryPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="flex items-center justify-between border-t border-zinc-100 px-5 py-4">
+          <div className="text-xs text-zinc-400">
+            第 {page} / {Math.max(pages, 1)} 页 · {total} 条
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-xl border-zinc-200 bg-zinc-100 text-zinc-700 shadow-none hover:bg-zinc-200"
+              disabled={page <= 1 || loading}
+              onClick={() => {
+                setLoading(true)
+                setPage((current) => Math.max(1, current - 1))
+              }}
+            >
+              上一页
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-xl border-zinc-200 bg-zinc-100 text-zinc-700 shadow-none hover:bg-zinc-200"
+              disabled={page >= pages || loading}
+              onClick={() => {
+                setLoading(true)
+                setPage((current) => Math.min(pages, current + 1))
+              }}
+            >
+              下一页
+            </Button>
+          </div>
         </div>
       </Card>
     </div>

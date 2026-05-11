@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jiujuan/wukong/internal/model"
 	dbpkg "github.com/jiujuan/wukong/pkg/database"
 	"github.com/jiujuan/wukong/pkg/skills"
@@ -112,4 +113,64 @@ func (r *SkillRepository) ListSkills(ctx context.Context, limit int) ([]*model.S
 		return nil, err
 	}
 	return list, nil
+}
+
+func (r *SkillRepository) GetSkill(ctx context.Context, skillName string) (*model.SkillMeta, error) {
+	if r == nil || r.db == nil || strings.TrimSpace(skillName) == "" {
+		return nil, nil
+	}
+	item := &model.SkillMeta{}
+	err := r.db.Pool().QueryRow(ctx, `
+		SELECT id, skill_name, description, version, enabled, memory_type, memory_window, memory_compress, created_at, updated_at
+		FROM skill_meta
+		WHERE skill_name = $1
+	`, strings.TrimSpace(skillName)).Scan(
+		&item.ID,
+		&item.SkillName,
+		&item.Description,
+		&item.Version,
+		&item.Enabled,
+		&item.MemoryType,
+		&item.MemoryWindow,
+		&item.MemoryCompress,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return item, nil
+}
+
+func (r *SkillRepository) UpdateSkill(ctx context.Context, item *model.SkillMeta) error {
+	if r == nil || r.db == nil || item == nil || strings.TrimSpace(item.SkillName) == "" {
+		return nil
+	}
+	now := time.Now()
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO skill_meta (
+			skill_name, description, version, enabled, memory_type, memory_window, memory_compress, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (skill_name) DO UPDATE SET
+			description = EXCLUDED.description,
+			version = EXCLUDED.version,
+			enabled = EXCLUDED.enabled,
+			memory_type = EXCLUDED.memory_type,
+			memory_window = EXCLUDED.memory_window,
+			memory_compress = EXCLUDED.memory_compress,
+			updated_at = EXCLUDED.updated_at
+	`,
+		strings.TrimSpace(item.SkillName),
+		item.Description,
+		item.Version,
+		item.Enabled,
+		item.MemoryType,
+		item.MemoryWindow,
+		item.MemoryCompress,
+		now,
+	)
+	return err
 }

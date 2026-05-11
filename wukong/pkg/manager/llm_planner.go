@@ -7,12 +7,14 @@ import (
 	"strings"
 
 	"github.com/jiujuan/wukong/pkg/llm"
+	"github.com/jiujuan/wukong/pkg/prompt"
 	"github.com/jiujuan/wukong/pkg/statemachine"
 )
 
 type LLMPlanner struct {
-	provider *llm.Provider
-	fallback TaskPlanner
+	provider     *llm.Provider
+	fallback     TaskPlanner
+	promptEngine *prompt.Engine
 }
 
 func NewLLMPlanner(provider *llm.Provider, fallback TaskPlanner) *LLMPlanner {
@@ -20,8 +22,9 @@ func NewLLMPlanner(provider *llm.Provider, fallback TaskPlanner) *LLMPlanner {
 		fallback = NewTplPlanner()
 	}
 	return &LLMPlanner{
-		provider: provider,
-		fallback: fallback,
+		provider:     provider,
+		fallback:     fallback,
+		promptEngine: prompt.NewDefaultEngine(),
 	}
 }
 
@@ -70,19 +73,17 @@ func (p *LLMPlanner) PlanSubTasks(ctx context.Context, task *Task) ([]SubTaskDef
 
 func (p *LLMPlanner) planByLLM(ctx context.Context, task *Task) (*llmPlanPayload, error) {
 	paramsJSON, _ := json.Marshal(task.Params)
-	systemPrompt := `你是任务规划器。把用户任务拆解为可执行DAG子任务。只输出JSON，不要输出任何解释。
-JSON格式：
-{"thought":"一句整体规划思路","steps":[{"id":"s1","action":"web_search","params":{},"depends_on":[],"thought":"该步骤思路"}]}
-要求：
-1) action 必须是简短可执行动作名
-2) depends_on 引用步骤id
-3) steps 至少1个，最多8个
-4) 保证DAG无环`
-	userPrompt := fmt.Sprintf("task_id=%s\nskill=%s\nparams=%s", task.TaskID, task.SkillName, string(paramsJSON))
-	resp, err := p.provider.Chat(ctx, []llm.Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: userPrompt},
+	messages, err := p.promptEngine.Render(prompt.TemplatePlannerTaskDefault, prompt.RenderInput{
+		Variables: map[string]any{
+			"task_id":     task.TaskID,
+			"skill_name":  task.SkillName,
+			"params_json": string(paramsJSON),
+		},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("render planner prompt failed: %w", err)
+	}
+	resp, err := p.provider.Chat(ctx, messages)
 	if err != nil {
 		return nil, err
 	}

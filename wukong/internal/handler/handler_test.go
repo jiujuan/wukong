@@ -133,11 +133,27 @@ func (m *mockTaskService) GetSubTasks(ctx context.Context, taskID string) ([]*ma
 }
 
 type mockSkillService struct {
-	listSkillsFn func(context.Context) ([]*model.SkillMeta, error)
+	listSkillsFn  func(context.Context) ([]*model.SkillMeta, error)
+	getSkillFn    func(context.Context, string) (*model.SkillMeta, error)
+	updateSkillFn func(context.Context, *model.SkillMeta) error
 }
 
 func (m *mockSkillService) ListSkills(ctx context.Context) ([]*model.SkillMeta, error) {
 	return m.listSkillsFn(ctx)
+}
+
+func (m *mockSkillService) GetSkill(ctx context.Context, skillName string) (*model.SkillMeta, error) {
+	if m.getSkillFn == nil {
+		return nil, nil
+	}
+	return m.getSkillFn(ctx, skillName)
+}
+
+func (m *mockSkillService) UpdateSkill(ctx context.Context, item *model.SkillMeta) error {
+	if m.updateSkillFn == nil {
+		return nil
+	}
+	return m.updateSkillFn(ctx, item)
 }
 
 type mockMemoryService struct {
@@ -447,6 +463,29 @@ func TestSkillAndMemoryHandlers(t *testing.T) {
 		listSkillsFn: func(ctx context.Context) ([]*model.SkillMeta, error) {
 			return []*model.SkillMeta{{SkillName: "skill-a", Enabled: true}}, nil
 		},
+		getSkillFn: func(ctx context.Context, skillName string) (*model.SkillMeta, error) {
+			if skillName != "skill-a" {
+				t.Fatalf("unexpected skill name: %s", skillName)
+			}
+			return &model.SkillMeta{
+				SkillName:      "skill-a",
+				Description:    "desc",
+				Version:        "v1",
+				Enabled:        true,
+				MemoryType:     "summary",
+				MemoryWindow:   8,
+				MemoryCompress: true,
+			}, nil
+		},
+		updateSkillFn: func(ctx context.Context, item *model.SkillMeta) error {
+			if item.SkillName != "skill-a" {
+				t.Fatalf("unexpected update skill name: %s", item.SkillName)
+			}
+			if item.Description != "updated" || item.Version != "v2" || item.MemoryWindow != 16 || !item.MemoryCompress {
+				t.Fatalf("unexpected update payload: %#v", item)
+			}
+			return nil
+		},
 	})
 	c1, w1 := newTestContext(t, http.MethodGet, "/skills", nil)
 	skillHandler.ListSkills(c1)
@@ -455,6 +494,32 @@ func TestSkillAndMemoryHandlers(t *testing.T) {
 	decodeData(t, resp1.Data, &skills)
 	if skills["total"].(float64) != 1 {
 		t.Fatalf("skills total = %#v", skills["total"])
+	}
+
+	c1Detail, w1Detail := newTestContext(t, http.MethodGet, "/skills/detail?skill_name=skill-a", nil)
+	skillHandler.Detail(c1Detail)
+	resp1Detail := decodeAPIResponse(t, w1Detail)
+	var skillDetail map[string]any
+	decodeData(t, resp1Detail.Data, &skillDetail)
+	if skillDetail["skill_name"] != "skill-a" {
+		t.Fatalf("skill detail name = %#v", skillDetail["skill_name"])
+	}
+
+	c1Update, w1Update := newTestContext(t, http.MethodPost, "/skills/update", gin.H{
+		"skill_name":      "skill-a",
+		"description":     "updated",
+		"version":         "v2",
+		"enabled":         true,
+		"memory_type":     "summary",
+		"memory_window":   16,
+		"memory_compress": true,
+	})
+	skillHandler.UpdateSkill(c1Update)
+	resp1Update := decodeAPIResponse(t, w1Update)
+	var updated map[string]any
+	decodeData(t, resp1Update.Data, &updated)
+	if updated["updated"] != true {
+		t.Fatalf("updated = %#v", updated["updated"])
 	}
 
 	memoryHandler := NewMemoryHandler(&mockMemoryService{

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
-import { Activity, ArrowLeft, GitBranch, ListTodo, Plus, TerminalSquare } from 'lucide-react'
+import { Activity, ArrowLeft, ArrowRight, GitBranch, ListTodo, Plus, TerminalSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import ReactFlow, {
   Background,
@@ -46,7 +46,7 @@ export function TasksPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [taskPrompt, setTaskPrompt] = useState('')
-  const [taskSkill, setTaskSkill] = useState('general')
+  const [taskSkill, setTaskSkill] = useState('')
   const [taskPriority, setTaskPriority] = useState(5)
   const [taskResult, setTaskResult] = useState<string>('')
   const [statusTrace, setStatusTrace] = useState<TraceItem[]>([])
@@ -61,6 +61,8 @@ export function TasksPage() {
   const updateTaskStatus = useAppStore((state) => state.updateTaskStatus)
   const loadTasks = useAppStore((state) => state.loadTasks)
   const createTask = useAppStore((state) => state.createTask)
+  const skills = useAppStore((state) => state.skills)
+  const loadSkills = useAppStore((state) => state.loadSkills)
 
   const selectedTaskId = routeTaskId ?? currentTaskId
   const currentTask = tasks.find((item) => item.taskId === selectedTaskId)
@@ -79,6 +81,10 @@ export function TasksPage() {
   useEffect(() => {
     loadTasks().catch((error: Error) => toast.error(error.message))
   }, [loadTasks])
+
+  useEffect(() => {
+    loadSkills().catch((error: Error) => toast.error(error.message))
+  }, [loadSkills])
 
   useEffect(() => {
     if (!routeTaskId) {
@@ -240,14 +246,10 @@ export function TasksPage() {
       toast.warning('请输入任务描述')
       return
     }
-    if (!taskSkill.trim()) {
-      toast.warning('请输入技能名')
-      return
-    }
     setCreating(true)
     try {
       const created = await createTask({
-        skillName: taskSkill.trim(),
+        skillName: taskSkill.trim() || 'general',
         priority: taskPriority,
         params: { prompt: taskPrompt.trim() },
       })
@@ -272,30 +274,68 @@ export function TasksPage() {
     return (
       <div className="flex h-full flex-col gap-5">
         <PageHeader
-          title="任务中心"
-          description="提交可追踪任务，并查看实时执行过程与最终结果"
+          title="Task Center"
+          description="Submit tasks, track live execution, and inspect final results."
           action={
             <Button className="gap-2" onClick={() => setSheetOpen(true)}>
               <Plus className="h-4 w-4" />
-              提交任务
+              Submit Task
             </Button>
           }
         />
         <Card className="min-h-0 flex-1 overflow-hidden">
-          <SectionTitle icon={ListTodo} title="任务列表" description={`${tasks.length} 个任务`} />
-          <div className="min-h-0 space-y-2 overflow-auto p-4 pt-0">
-            {tasks.length === 0 ? (
-              <EmptyState text="暂无任务，请先提交一个任务" />
-            ) : (
-              tasks.map((task) => (
-                <TaskRow key={task.taskId} task={task} onClick={() => navigate(`/tasks/${task.taskId}`)} />
-              ))
-            )}
+          <SectionTitle icon={ListTodo} title="Task List" description={`${tasks.length} tasks`} />
+          <div className="min-h-0 overflow-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100 bg-zinc-50 text-xs font-medium text-zinc-400">
+                  <th className="px-5 py-3 text-left">Task</th>
+                  <th className="px-5 py-3 text-left">Skill</th>
+                  <th className="px-5 py-3 text-left">Status</th>
+                  <th className="px-5 py-3 text-left">View</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.length === 0 ? (
+                  <EmptyTable colSpan={4}>No tasks yet. Submit one to get started.</EmptyTable>
+                ) : (
+                  tasks.map((task) => (
+                    <tr key={task.taskId} className="border-b border-zinc-100 hover:bg-indigo-50/20">
+                      <td className="px-5 py-4">
+                        <button
+                          className="w-full text-left"
+                          onClick={() => navigate(`/tasks/${task.taskId}`)}
+                        >
+                          <div className="font-medium text-zinc-900">{task.title}</div>
+                          <div className="mt-1 text-xs text-zinc-400">{task.taskId}</div>
+                        </button>
+                      </td>
+                      <td className="px-5 py-4 text-zinc-600">{task.skillName ?? "-"}</td>
+                      <td className="px-5 py-4">
+                        <StatusPill status={task.status} />
+                      </td>
+                      <td className="px-5 py-4">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="h-8 gap-1 rounded-xl border-zinc-200 bg-zinc-100 px-3 text-zinc-700 shadow-none hover:bg-zinc-200"
+                          onClick={() => navigate(`/tasks/${task.taskId}`)}
+                        >
+                          View
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </Card>
         <TaskSheet
           open={sheetOpen}
           creating={creating}
+          skills={skills}
           taskSkill={taskSkill}
           taskPriority={taskPriority}
           taskPrompt={taskPrompt}
@@ -308,9 +348,9 @@ export function TasksPage() {
       </div>
     )
   }
-
   return (
     <div className="flex h-full flex-col gap-5">
+  return (
       <PageHeader
         title="任务详情"
         description={selectedTaskId ?? '未选择任务'}
@@ -432,19 +472,19 @@ export function TasksPage() {
           </Card>
 
           <Card className="overflow-hidden">
+            <SectionTitle icon={TerminalSquare} title="最终结果" description="聚合后的任务输出" />
+            <div className="max-h-[260px] overflow-auto border-t border-zinc-100 bg-zinc-50 p-4 text-sm leading-6 whitespace-pre-wrap text-zinc-700">
+              {taskResult || '等待执行结果...'}
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden">
             <SectionTitle icon={GitBranch} title="子任务 DAG" description="规划与依赖关系" />
             <div className="h-[320px] border-t border-zinc-100 bg-white">
               <ReactFlow nodes={nodes} edges={edges} fitView>
                 <Background color="#e4e4e7" gap={16} />
                 <Controls showInteractive={false} />
               </ReactFlow>
-            </div>
-          </Card>
-
-          <Card className="overflow-hidden">
-            <SectionTitle icon={TerminalSquare} title="最终结果" description="聚合后的任务输出" />
-            <div className="max-h-[260px] overflow-auto border-t border-zinc-100 bg-zinc-50 p-4 text-sm leading-6 whitespace-pre-wrap text-zinc-700">
-              {taskResult || '等待执行结果...'}
             </div>
           </Card>
         </div>
@@ -553,9 +593,20 @@ function EmptyState({ text }: { text: string }) {
   )
 }
 
+function EmptyTable({ colSpan, children }: { colSpan: number; children: ReactNode }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="px-5 py-8 text-center text-sm text-zinc-400">
+        {children}
+      </td>
+    </tr>
+  )
+}
+
 function TaskSheet({
   open,
   creating,
+  skills,
   taskSkill,
   taskPriority,
   taskPrompt,
@@ -567,6 +618,7 @@ function TaskSheet({
 }: {
   open: boolean
   creating: boolean
+  skills: ReturnType<typeof useAppStore.getState>['skills']
   taskSkill: string
   taskPriority: number
   taskPrompt: string
@@ -580,8 +632,22 @@ function TaskSheet({
     <Sheet open={open} onClose={onClose} title="提交任务执行">
       <div className="space-y-4">
         <div className="space-y-2">
-          <div className="text-sm font-medium text-zinc-700">技能名</div>
-          <Input value={taskSkill} onChange={(event) => setTaskSkill(event.target.value)} />
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-medium text-zinc-700">Skills</div>
+            <div className="text-xs text-zinc-400">Optional</div>
+          </div>
+          <select
+            value={taskSkill}
+            onChange={(event) => setTaskSkill(event.target.value)}
+            className="flex h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+          >
+            <option value="">Do not specify (use default)</option>
+            {skills.map((skill) => (
+              <option key={skill.name} value={skill.name}>
+                {skill.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="space-y-2">
           <div className="text-sm font-medium text-zinc-700">优先级 (1-10)</div>
