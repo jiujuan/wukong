@@ -1,4 +1,4 @@
-import { Bot, Brain, ListTodo, MessageSquarePlus, Trash2 } from 'lucide-react'
+import { Bot, Brain, Database, ListTodo, MessageSquarePlus, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -14,6 +14,7 @@ type AppShellProps = {
 const navItems = [
   { to: '/chat', label: '对话', icon: Bot },
   { to: '/tasks', label: '任务', icon: ListTodo },
+  { to: '/memory', label: '记忆', icon: Database },
   { to: '/skills', label: '技能', icon: Brain },
 ]
 
@@ -25,7 +26,6 @@ export function AppShell({ children }: AppShellProps) {
   const setCurrentSession = useAppStore((state) => state.setCurrentSession)
   const createSession = useAppStore((state) => state.createSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
-  const toggleMemory = useAppStore((state) => state.toggleMemory)
   const logout = useAuthStore((state) => state.logout)
 
   return (
@@ -108,8 +108,8 @@ export function AppShell({ children }: AppShellProps) {
         <header className="flex h-14 items-center justify-between border-b border-zinc-300 px-4">
           <div className="text-sm text-zinc-600">{location.pathname}</div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={() => toggleMemory(true)}>
-              记忆抽屉
+            <Button variant="ghost" onClick={() => navigate('/memory')}>
+              记忆文件
             </Button>
             <Button
               variant="secondary"

@@ -227,7 +227,7 @@ export const api = {
     })
   },
   async listWorkingMemory(taskId: string): Promise<WorkingMemory[]> {
-    const raw = await request<unknown>(`/api/v1/memory/working/list?taskId=${taskId}`)
+    const raw = await request<unknown>(`/api/v1/memory/working/list?task_id=${taskId}`)
     const list = Array.isArray(raw)
       ? raw
       : Array.isArray((raw as { list?: unknown[] })?.list)
@@ -242,8 +242,16 @@ export const api = {
       }
     })
   },
-  async listLongMemory(taskId: string): Promise<LongMemory[]> {
-    const raw = await request<unknown>(`/api/v1/memory/long/list?taskId=${taskId}`)
+  async listLongMemory(input: { skillName?: string; keyword?: string } = {}): Promise<LongMemory[]> {
+    const params = new URLSearchParams()
+    if (input.skillName) {
+      params.set('skill_name', input.skillName)
+    }
+    if (input.keyword) {
+      params.set('keyword', input.keyword)
+    }
+    const query = params.toString()
+    const raw = await request<unknown>(`/api/v1/memory/long/list${query ? `?${query}` : ''}`)
     const list = Array.isArray(raw)
       ? raw
       : Array.isArray((raw as { list?: unknown[] })?.list)

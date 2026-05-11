@@ -40,7 +40,7 @@ type AppState = {
     sessionId?: string
   }) => Promise<TaskItem>
   loadTasks: () => Promise<void>
-  loadMemory: (taskId: string) => Promise<void>
+  loadMemory: (taskId: string, skillName?: string) => Promise<void>
   loadSkills: () => Promise<void>
 }
 
@@ -171,10 +171,10 @@ export const useAppStore = create<AppState>((set) => ({
       }
     })
   },
-  async loadMemory(taskId) {
+  async loadMemory(taskId, skillName) {
     const [workingMemory, longMemory] = await Promise.all([
       api.listWorkingMemory(taskId),
-      api.listLongMemory(taskId),
+      api.listLongMemory({ skillName }),
     ])
     set({ workingMemory, longMemory })
   },
