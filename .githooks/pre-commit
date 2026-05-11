@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -eu
+
+staged_frontend_files="$(git diff --cached --name-only --diff-filter=ACMR | grep '^wukong-frontend/' || true)"
+
+if [ -z "$staged_frontend_files" ]; then
+  echo "pre-commit: no staged frontend changes, skipping frontend lint."
+  exit 0
+fi
+
+echo "pre-commit: staged frontend changes detected, running frontend lint..."
+cd wukong-frontend
+npm run lint
