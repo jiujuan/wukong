@@ -62,7 +62,7 @@ type Pool struct {
 	totalRetried   atomic.Int64
 }
 
-// worker 单个 goroutine
+// worker 单个 goroutine 工人
 type worker struct {
 	id      int
 	pool    *Pool
