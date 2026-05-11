@@ -13,7 +13,6 @@ import type { ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { MemoryDrawer } from '@/features/memory/memory_drawer'
 import { useAuthStore } from '@/store/use_auth_store'
 import { useAppStore } from '@/store/use_app_store'
 
@@ -25,7 +24,7 @@ const navGroups = [
   {
     title: '概览',
     items: [
-      { to: '/chat', label: '晴辰助手', icon: Sparkles },
+      { to: '/chat', label: '晴景助手', icon: Sparkles },
       { to: '/tasks', label: '任务中心', icon: ListTodo },
     ],
   },
@@ -33,11 +32,16 @@ const navGroups = [
     title: '配置',
     items: [{ to: '/skills', label: '服务管理', icon: Brain }],
   },
+  {
+    title: '数据',
+    items: [{ to: '/memory', label: '记忆文件', icon: Database }],
+  },
 ]
 
 const pageTitles: Record<string, string> = {
-  '/chat': '晴辰助手',
+  '/chat': '晴景助手',
   '/tasks': '任务中心',
+  '/memory': '记忆文件',
   '/skills': '服务管理',
 }
 
@@ -49,12 +53,10 @@ export function AppShell({ children }: AppShellProps) {
   const setCurrentSession = useAppStore((state) => state.setCurrentSession)
   const createSession = useAppStore((state) => state.createSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
-  const toggleMemory = useAppStore((state) => state.toggleMemory)
   const logout = useAuthStore((state) => state.logout)
 
   const pageTitle =
-    pageTitles[location.pathname] ??
-    (location.pathname.startsWith('/tasks') ? '任务详情' : 'Wukong')
+    pageTitles[location.pathname] ?? (location.pathname.startsWith('/tasks') ? '任务详情' : 'Wukong')
 
   const handleCreateSession = () => {
     createSession()
@@ -108,26 +110,6 @@ export function AppShell({ children }: AppShellProps) {
                 </div>
               </nav>
             ))}
-
-            <section>
-              <div className="mb-2 flex items-center justify-between px-1">
-                <div className="text-xs font-medium text-zinc-400">数据</div>
-                <button
-                  className="rounded-md p-1 text-zinc-400 hover:bg-zinc-50 hover:text-indigo-600"
-                  onClick={() => toggleMemory(true)}
-                  title="记忆文件"
-                >
-                  <Database className="h-4 w-4" />
-                </button>
-              </div>
-              <button
-                className="flex h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-800"
-                onClick={() => toggleMemory(true)}
-              >
-                <Database className="h-5 w-5 shrink-0" />
-                <span className="truncate">记忆文件</span>
-              </button>
-            </section>
 
             <section>
               <div className="mb-2 flex items-center justify-between px-1">
@@ -214,7 +196,7 @@ export function AppShell({ children }: AppShellProps) {
             <div className="mt-1 text-lg font-semibold text-zinc-900">{pageTitle}</div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={() => toggleMemory(true)}>
+            <Button variant="secondary" onClick={() => navigate('/memory')}>
               记忆文件
             </Button>
             <Button onClick={handleCreateSession}>
@@ -225,7 +207,6 @@ export function AppShell({ children }: AppShellProps) {
         </header>
         <div className="min-h-0 flex-1 overflow-auto p-6">{children}</div>
       </main>
-      <MemoryDrawer />
     </div>
   )
 }
