@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-test:
+    name: backend test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wukong
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: wukong/go.mod
+          cache-dependency-path: wukong/go.sum
+
+      - name: Download deps
+        run: go mod download
+
+      - name: Run tests
+        run: go test ./... -count=1
+
+  frontend-check:
+    name: frontend check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wukong-frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: wukong-frontend/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
