@@ -1,6 +1,9 @@
 package queue
 
 import (
+	"fmt"
+	"math/rand"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -12,288 +15,359 @@ func TestNewQueue(t *testing.T) {
 		t.Fatal("New() returned nil")
 	}
 	if !q.IsEmpty() {
-		t.Error("New queue should be empty")
+		t.Fatal("new queue should be empty")
 	}
-}
-
-func TestPush(t *testing.T) {
-	q := New()
-
-	task := &Task{
-		TaskID:   "task1",
-		Priority: 5,
-	}
-
-	if !q.Push(task) {
-		t.Error("Push() should return true for new task")
-	}
-	if q.Size() != 1 {
-		t.Errorf("Size() = %d, want %d", q.Size(), 1)
-	}
-}
-
-func TestPushIdempotent(t *testing.T) {
-	q := New()
-
-	task := &Task{
-		TaskID:   "task1",
-		Priority: 5,
-	}
-
-	// First push should return true
-	if !q.Push(task) {
-		t.Error("Push() should return true for new task")
-	}
-
-	// Second push (duplicate) should return false
-	if q.Push(task) {
-		t.Error("Push() should return false for duplicate task")
-	}
-
-	if q.Size() != 1 {
-		t.Errorf("Size() should remain 1 for duplicate, got %d", q.Size())
-	}
-}
-
-func TestPop(t *testing.T) {
-	q := New()
-
-	// 按优先级插入
-	q.Push(&Task{TaskID: "low", Priority: 1})
-	q.Push(&Task{TaskID: "high", Priority: 10})
-	q.Push(&Task{TaskID: "medium", Priority: 5})
-
-	// 第一个pop应该是最高优先级
-	task := q.Pop()
-	if task == nil {
-		t.Fatal("Pop() returned nil")
-	}
-	if task.TaskID != "high" {
-		t.Errorf("Pop() = %v, want high", task.TaskID)
-	}
-}
-
-func TestPopEmpty(t *testing.T) {
-	q := New()
-
-	task := q.Pop()
-	if task != nil {
-		t.Error("Pop() should return nil for empty queue")
-	}
-}
-
-func TestPeek(t *testing.T) {
-	q := New()
-
-	task := q.Peek()
-	if task != nil {
-		t.Error("Peek() should return nil for empty queue")
-	}
-
-	q.Push(&Task{TaskID: "task1", Priority: 5})
-
-	peeked := q.Peek()
-	if peeked == nil {
-		t.Error("Peek() should return task")
-	}
-	if peeked.TaskID != "task1" {
-		t.Errorf("Peek() = %v, want task1", peeked.TaskID)
-	}
-
-	// peek should not remove
-	if q.Size() != 1 {
-		t.Error("Peek() should not remove task")
-	}
-}
-
-func TestGet(t *testing.T) {
-	q := New()
-
-	q.Push(&Task{TaskID: "task1", Priority: 5})
-
-	task, ok := q.Get("task1")
-	if !ok {
-		t.Error("Get() should return true for existing task")
-	}
-	if task.TaskID != "task1" {
-		t.Errorf("Get() = %v, want task1", task.TaskID)
-	}
-
-	_, ok = q.Get("nonexistent")
-	if ok {
-		t.Error("Get() should return false for non-existing task")
-	}
-}
-
-func TestRemove(t *testing.T) {
-	q := New()
-
-	q.Push(&Task{TaskID: "task1", Priority: 5})
-	q.Push(&Task{TaskID: "task2", Priority: 3})
-
-	if !q.Remove("task1") {
-		t.Error("Remove() should return true for existing task")
-	}
-	if q.Size() != 1 {
-		t.Errorf("Size() = %d, want %d", q.Size(), 1)
-	}
-
-	if q.Remove("nonexistent") {
-		t.Error("Remove() should return false for non-existing task")
-	}
-}
-
-func TestUpdate(t *testing.T) {
-	q := New()
-
-	q.Push(&Task{TaskID: "task1", Priority: 5})
-
-	q.Update(&Task{TaskID: "task1", Priority: 8})
-
-	task, _ := q.Get("task1")
-	if task.Priority != 8 {
-		t.Errorf("Priority = %d, want %d", task.Priority, 8)
-	}
-}
-
-func TestPriorityBoundary(t *testing.T) {
-	q := New()
-
-	// 测试优先级边界
-	q.Push(&Task{TaskID: "task0", Priority: 0})
-	q.Push(&Task{TaskID: "task11", Priority: 11})
-
-	task0, _ := q.Get("task0")
-	if task0.Priority != 1 { // 应该被限制为1
-		t.Errorf("Priority should be 1, got %d", task0.Priority)
-	}
-
-	task11, _ := q.Get("task11")
-	if task11.Priority != 10 { // 应该被限制为10
-		t.Errorf("Priority should be 10, got %d", task11.Priority)
-	}
-}
-
-func TestSize(t *testing.T) {
-	q := New()
-
 	if q.Size() != 0 {
-		t.Errorf("Empty size = %d, want %d", q.Size(), 0)
-	}
-
-	for i := 0; i < 10; i++ {
-		q.Push(&Task{TaskID: "task" + string(rune('0'+i)), Priority: 5})
-	}
-
-	if q.Size() != 10 {
-		t.Errorf("Size() = %d, want %d", q.Size(), 10)
+		t.Fatalf("Size() = %d, want 0", q.Size())
 	}
 }
 
-func TestClear(t *testing.T) {
+func TestPushIdempotentAndNormalization(t *testing.T) {
 	q := New()
 
-	for i := 0; i < 10; i++ {
-		q.Push(&Task{TaskID: "task" + string(rune('0'+i)), Priority: 5})
+	task := &Task{
+		TaskID:   "task-1",
+		Priority: 0,
+	}
+	if !q.Push(task) {
+		t.Fatal("Push() should accept a new task")
+	}
+	if q.Push(task) {
+		t.Fatal("Push() should reject duplicate task IDs")
+	}
+
+	got, ok := q.Get("task-1")
+	if !ok {
+		t.Fatal("Get() should find pushed task")
+	}
+	if got.Priority != minPriority {
+		t.Fatalf("Priority = %d, want %d", got.Priority, minPriority)
+	}
+	if got.ExecuteAt.IsZero() {
+		t.Fatal("ExecuteAt should be initialized")
+	}
+	if got.CreatedAt.IsZero() {
+		t.Fatal("CreatedAt should be initialized")
+	}
+}
+
+func TestPopHonorsPriorityThenExecuteAt(t *testing.T) {
+	q := New()
+	base := time.Now().Add(-time.Minute)
+
+	mustPush(t, q, &Task{TaskID: "low-earlier", Priority: 1, ExecuteAt: base})
+	mustPush(t, q, &Task{TaskID: "high-later", Priority: 10, ExecuteAt: base.Add(2 * time.Second)})
+	mustPush(t, q, &Task{TaskID: "high-earlier", Priority: 10, ExecuteAt: base.Add(1 * time.Second)})
+
+	if got := q.Pop(); got == nil || got.TaskID != "high-earlier" {
+		t.Fatalf("first Pop() = %#v, want high-earlier", got)
+	}
+	if got := q.Pop(); got == nil || got.TaskID != "high-later" {
+		t.Fatalf("second Pop() = %#v, want high-later", got)
+	}
+	if got := q.Pop(); got == nil || got.TaskID != "low-earlier" {
+		t.Fatalf("third Pop() = %#v, want low-earlier", got)
+	}
+}
+
+func TestPopSkipsDelayedTaskButKeepsLowerPriorityReadyBehavior(t *testing.T) {
+	q := New()
+	now := time.Now()
+
+	mustPush(t, q, &Task{
+		TaskID:    "high-delayed",
+		Priority:  10,
+		ExecuteAt: now.Add(time.Hour),
+	})
+	mustPush(t, q, &Task{
+		TaskID:    "low-ready",
+		Priority:  1,
+		ExecuteAt: now.Add(-time.Second),
+	})
+
+	if got := q.Pop(); got == nil || got.TaskID != "low-ready" {
+		t.Fatalf("Pop() = %#v, want low-ready", got)
+	}
+	if got := q.Pop(); got != nil {
+		t.Fatalf("Pop() should skip delayed task, got %#v", got)
+	}
+}
+
+func TestPeekReturnsHighestPriorityTopWithoutRemoving(t *testing.T) {
+	q := New()
+	now := time.Now()
+
+	if got := q.Peek(); got != nil {
+		t.Fatalf("Peek() on empty queue = %#v, want nil", got)
+	}
+
+	mustPush(t, q, &Task{TaskID: "p5", Priority: 5, ExecuteAt: now})
+	mustPush(t, q, &Task{TaskID: "p10-delayed", Priority: 10, ExecuteAt: now.Add(time.Hour)})
+
+	got := q.Peek()
+	if got == nil || got.TaskID != "p10-delayed" {
+		t.Fatalf("Peek() = %#v, want p10-delayed", got)
+	}
+	if q.Size() != 2 {
+		t.Fatalf("Peek() should not remove items, size = %d", q.Size())
+	}
+}
+
+func TestUpdateReordersWithinPriority(t *testing.T) {
+	q := New()
+	now := time.Now()
+
+	mustPush(t, q, &Task{TaskID: "later", Priority: 5, ExecuteAt: now.Add(time.Second)})
+	mustPush(t, q, &Task{TaskID: "earlier", Priority: 5, ExecuteAt: now.Add(2 * time.Second)})
+
+	updated := &Task{TaskID: "earlier", Priority: 5, ExecuteAt: now.Add(-time.Second)}
+	if !q.Update(updated) {
+		t.Fatal("Update() should succeed")
+	}
+
+	if got := q.Pop(); got == nil || got.TaskID != "earlier" {
+		t.Fatalf("Pop() after update = %#v, want earlier", got)
+	}
+	validateAllHeaps(t, q)
+}
+
+func TestUpdateMovesTaskAcrossPriorities(t *testing.T) {
+	q := New()
+	now := time.Now()
+
+	mustPush(t, q, &Task{TaskID: "task-a", Priority: 3, ExecuteAt: now})
+	mustPush(t, q, &Task{TaskID: "task-b", Priority: 8, ExecuteAt: now})
+
+	if !q.Update(&Task{TaskID: "task-a", Priority: 9, ExecuteAt: now}) {
+		t.Fatal("Update() should succeed")
+	}
+
+	got := q.Pop()
+	if got == nil || got.TaskID != "task-a" {
+		t.Fatalf("Pop() = %#v, want task-a", got)
+	}
+	validateAllHeaps(t, q)
+}
+
+func TestRemoveAndClear(t *testing.T) {
+	q := New()
+	now := time.Now()
+
+	mustPush(t, q, &Task{TaskID: "task-1", Priority: 4, ExecuteAt: now})
+	mustPush(t, q, &Task{TaskID: "task-2", Priority: 7, ExecuteAt: now})
+
+	if !q.Remove("task-1") {
+		t.Fatal("Remove() should succeed for existing task")
+	}
+	if q.Remove("missing") {
+		t.Fatal("Remove() should fail for missing task")
+	}
+	if q.Size() != 1 {
+		t.Fatalf("Size() = %d, want 1", q.Size())
 	}
 
 	q.Clear()
-
 	if !q.IsEmpty() {
-		t.Error("After Clear(), queue should be empty")
+		t.Fatal("queue should be empty after Clear()")
 	}
+	validateAllHeaps(t, q)
 }
 
-func TestList(t *testing.T) {
+func TestListByPriorityReturnsCopy(t *testing.T) {
 	q := New()
+	now := time.Now()
 
-	q.Push(&Task{TaskID: "task1", Priority: 5})
-	q.Push(&Task{TaskID: "task2", Priority: 3})
+	mustPush(t, q, &Task{TaskID: "task-1", Priority: 5, ExecuteAt: now})
+	mustPush(t, q, &Task{TaskID: "task-2", Priority: 5, ExecuteAt: now.Add(time.Second)})
 
-	tasks := q.List()
-	if len(tasks) != 2 {
-		t.Errorf("List() length = %d, want %d", len(tasks), 2)
+	items := q.ListByPriority(5)
+	if len(items) != 2 {
+		t.Fatalf("ListByPriority(5) len = %d, want 2", len(items))
 	}
-}
+	items[0] = nil
 
-func TestListByPriority(t *testing.T) {
-	q := New()
-
-	q.Push(&Task{TaskID: "task1", Priority: 5})
-	q.Push(&Task{TaskID: "task2", Priority: 5})
-	q.Push(&Task{TaskID: "task3", Priority: 3})
-
-	tasks := q.ListByPriority(5)
-	if len(tasks) != 2 {
-		t.Errorf("ListByPriority(5) length = %d, want %d", len(tasks), 2)
+	again := q.ListByPriority(5)
+	if len(again) != 2 || again[0] == nil {
+		t.Fatal("ListByPriority() should return a copy")
 	}
-
-	tasks = q.ListByPriority(3)
-	if len(tasks) != 1 {
-		t.Errorf("ListByPriority(3) length = %d, want %d", len(tasks), 1)
-	}
-
-	tasks = q.ListByPriority(0) // 无效优先级
-	if tasks != nil {
-		t.Error("ListByPriority(0) should return nil")
-	}
-}
-
-func TestConcurrentPush(t *testing.T) {
-	q := New()
-	var wg sync.WaitGroup
-
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			q.Push(&Task{TaskID: "task" + string(rune('0'+id%10)), Priority: 5})
-		}(i)
-	}
-
-	wg.Wait()
-
-	// 由于幂等性，最终只有10个任务
-	if q.Size() != 10 {
-		t.Errorf("Final size = %d, want %d", q.Size(), 10)
+	if got := q.ListByPriority(0); got != nil {
+		t.Fatalf("ListByPriority(0) = %#v, want nil", got)
 	}
 }
 
 func TestPopWithTimeout(t *testing.T) {
 	q := New()
 
-	// 队列为空，应该在超时后返回
-	_, err := q.PopWithTimeout(100 * time.Millisecond)
-	if err == nil {
-		t.Error("PopWithTimeout should return error on timeout")
+	if _, err := q.PopWithTimeout(100 * time.Millisecond); err == nil {
+		t.Fatal("PopWithTimeout() should return timeout error for empty queue")
 	}
 }
 
-func TestExecuteAt(t *testing.T) {
+func TestConcurrentPushWithUniqueTaskIDs(t *testing.T) {
 	q := New()
+	var wg sync.WaitGroup
 
-	// 创建一个延时任务
-	futureTime := time.Now().Add(1 * time.Hour)
-	q.Push(&Task{
-		TaskID:    "delayed",
-		Priority:  5,
-		ExecuteAt: futureTime,
-	})
+	for i := 0; i < 200; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			mustPushConcurrent(t, q, &Task{
+				TaskID:    fmt.Sprintf("task-%03d", id),
+				Priority:  (id % maxPriority) + 1,
+				ExecuteAt: time.Now().Add(-time.Duration(id) * time.Millisecond),
+			})
+		}(i)
+	}
+	wg.Wait()
 
-	// 立即pop应该跳过延时任务
-	task := q.Pop()
-	if task != nil {
-		t.Error("Pop() should skip delayed task")
+	if q.Size() != 200 {
+		t.Fatalf("Size() = %d, want 200", q.Size())
+	}
+	validateAllHeaps(t, q)
+}
+
+func TestQueueMaintainsQuadHeapInvariant(t *testing.T) {
+	q := New()
+	now := time.Now()
+
+	for i := 0; i < 128; i++ {
+		mustPush(t, q, &Task{
+			TaskID:    fmt.Sprintf("task-%03d", i),
+			Priority:  (i % maxPriority) + 1,
+			ExecuteAt: now.Add(time.Duration((i*37)%23) * time.Millisecond),
+		})
 	}
 
-	// 修改为立即执行
-	task, _ = q.Get("delayed")
-	task.ExecuteAt = time.Now()
-	q.Update(task)
+	for i := 0; i < 32; i++ {
+		if !q.Update(&Task{
+			TaskID:    fmt.Sprintf("task-%03d", i),
+			Priority:  ((i + 3) % maxPriority) + 1,
+			ExecuteAt: now.Add(-time.Duration(i) * time.Millisecond),
+		}) {
+			t.Fatalf("Update() failed for task-%03d", i)
+		}
+	}
 
-	// 现在应该能pop出来
-	task = q.Pop()
-	if task == nil {
-		t.Error("Pop() should return delayed task after ExecuteAt updated")
+	for i := 96; i < 112; i++ {
+		if !q.Remove(fmt.Sprintf("task-%03d", i)) {
+			t.Fatalf("Remove() failed for task-%03d", i)
+		}
+	}
+
+	validateAllHeaps(t, q)
+}
+
+func TestRandomizedPopMatchesReferenceOrdering(t *testing.T) {
+	q := New()
+	base := time.Now().Add(-time.Hour)
+	rng := rand.New(rand.NewSource(42))
+
+	type expectedItem struct {
+		taskID    string
+		priority  int
+		executeAt time.Time
+		order     int
+	}
+
+	expected := make([]expectedItem, 0, 300)
+	for i := 0; i < 300; i++ {
+		task := &Task{
+			TaskID:    fmt.Sprintf("task-%03d", i),
+			Priority:  rng.Intn(maxPriority) + 1,
+			ExecuteAt: base.Add(time.Duration(rng.Intn(5000)) * time.Millisecond),
+		}
+		mustPush(t, q, task)
+		expected = append(expected, expectedItem{
+			taskID:    task.TaskID,
+			priority:  task.Priority,
+			executeAt: task.ExecuteAt,
+			order:     i,
+		})
+	}
+
+	sort.Slice(expected, func(i, j int) bool {
+		if expected[i].priority != expected[j].priority {
+			return expected[i].priority > expected[j].priority
+		}
+		if !expected[i].executeAt.Equal(expected[j].executeAt) {
+			return expected[i].executeAt.Before(expected[j].executeAt)
+		}
+		return expected[i].order < expected[j].order
+	})
+
+	for _, want := range expected {
+		got := q.Pop()
+		if got == nil {
+			t.Fatalf("Pop() returned nil before queue drained, want %s", want.taskID)
+		}
+		if got.TaskID != want.taskID {
+			t.Fatalf("Pop() = %s, want %s", got.TaskID, want.taskID)
+		}
+	}
+
+	if got := q.Pop(); got != nil {
+		t.Fatalf("Pop() after drain = %#v, want nil", got)
+	}
+}
+
+func mustPush(t *testing.T, q *Queue, task *Task) {
+	t.Helper()
+	if !q.Push(task) {
+		t.Fatalf("Push() failed for task %s", task.TaskID)
+	}
+}
+
+func mustPushConcurrent(t *testing.T, q *Queue, task *Task) {
+	t.Helper()
+	if !q.Push(task) {
+		t.Errorf("Push() failed for task %s", task.TaskID)
+	}
+}
+
+func validateAllHeaps(t *testing.T, q *Queue) {
+	t.Helper()
+
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	total := 0
+	for priority := minPriority; priority <= maxPriority; priority++ {
+		heap := q.heaps[priority]
+		total += heap.len()
+		validateHeap(t, priority, heap)
+	}
+
+	if total != q.size {
+		t.Fatalf("heap item total = %d, queue size = %d", total, q.size)
+	}
+	if len(q.tasks) != q.size {
+		t.Fatalf("task map len = %d, queue size = %d", len(q.tasks), q.size)
+	}
+}
+
+func validateHeap(t *testing.T, priority int, heap *quadHeap) {
+	t.Helper()
+
+	if heap == nil {
+		t.Fatalf("priority %d heap is nil", priority)
+	}
+	if len(heap.items) != len(heap.indices) {
+		t.Fatalf("priority %d heap len = %d, index len = %d", priority, len(heap.items), len(heap.indices))
+	}
+
+	for i, item := range heap.items {
+		if item == nil || item.task == nil {
+			t.Fatalf("priority %d heap has nil item at index %d", priority, i)
+		}
+		if got := heap.indices[item.task.TaskID]; got != i {
+			t.Fatalf("priority %d task %s index = %d, want %d", priority, item.task.TaskID, got, i)
+		}
+
+		firstChild := i*quadHeapArity + 1
+		for child := firstChild; child < firstChild+quadHeapArity && child < len(heap.items); child++ {
+			if heap.less(child, i) {
+				t.Fatalf("priority %d violates heap invariant: child %d is less than parent %d", priority, child, i)
+			}
+		}
 	}
 }
