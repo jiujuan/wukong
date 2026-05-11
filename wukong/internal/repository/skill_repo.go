@@ -13,11 +13,11 @@ import (
 )
 
 type SkillRepository struct {
-	db *dbpkg.DB
+	db repositoryDB
 }
 
 func NewSkillRepository(db *dbpkg.DB) *SkillRepository {
-	return &SkillRepository{db: db}
+	return &SkillRepository{db: wrapRepositoryDB(db)}
 }
 
 func (r *SkillRepository) BatchUpsertSkills(ctx context.Context, items []*skills.Skill) error {
@@ -120,7 +120,7 @@ func (r *SkillRepository) GetSkill(ctx context.Context, skillName string) (*mode
 		return nil, nil
 	}
 	item := &model.SkillMeta{}
-	err := r.db.Pool().QueryRow(ctx, `
+	err := r.db.QueryRow(ctx, `
 		SELECT id, skill_name, description, version, enabled, memory_type, memory_window, memory_compress, created_at, updated_at
 		FROM skill_meta
 		WHERE skill_name = $1

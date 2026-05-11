@@ -13,11 +13,11 @@ import (
 )
 
 type ChatRepository struct {
-	db *dbpkg.DB
+	db repositoryDB
 }
 
 func NewChatRepository(db *dbpkg.DB) *ChatRepository {
-	return &ChatRepository{db: db}
+	return &ChatRepository{db: wrapRepositoryDB(db)}
 }
 
 func (r *ChatRepository) CreateSession(ctx context.Context, item *model.ChatSession) error {
@@ -29,7 +29,7 @@ func (r *ChatRepository) CreateSession(ctx context.Context, item *model.ChatSess
 		VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), $6)
 		RETURNING id, created_at, updated_at
 	`
-	if err := r.db.Pool().QueryRow(
+	if err := r.db.QueryRow(
 		ctx,
 		query,
 		item.SessionID,
@@ -57,7 +57,7 @@ func (r *ChatRepository) GetSession(ctx context.Context, userID, sessionID strin
 	item := &model.ChatSession{}
 	var title pgtype.Text
 	var expireAt pgtype.Timestamptz
-	err := r.db.Pool().QueryRow(ctx, query, userID, sessionID).Scan(
+	err := r.db.QueryRow(ctx, query, userID, sessionID).Scan(
 		&item.ID, &item.SessionID, &item.UserID, &title, &item.Scene, &item.Status,
 		&item.CreatedAt, &item.UpdatedAt, &expireAt,
 	)
@@ -86,7 +86,7 @@ func (r *ChatRepository) ListSessions(ctx context.Context, userID string, page, 
 	offset := (page - 1) * size
 	countQuery := `SELECT COUNT(*) FROM chat_session WHERE user_id = $1`
 	var total int64
-	if err := r.db.Pool().QueryRow(ctx, countQuery, userID).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, countQuery, userID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	query := `
@@ -144,7 +144,7 @@ func (r *ChatRepository) CreateMessage(ctx context.Context, item *model.ChatMess
 		FROM next_seq
 		RETURNING id, seq, created_at
 	`
-	return r.db.Pool().QueryRow(
+	return r.db.QueryRow(
 		ctx,
 		query,
 		item.SessionID,
@@ -222,7 +222,7 @@ func (r *ChatRepository) GetMemory(ctx context.Context, userID, sessionID string
 	item := &model.ChatMemory{}
 	var summary pgtype.Text
 	var recentMessages, userProfile, preference []byte
-	if err := r.db.Pool().QueryRow(ctx, query, userID, sessionID).Scan(
+	if err := r.db.QueryRow(ctx, query, userID, sessionID).Scan(
 		&item.ID, &item.SessionID, &item.UserID, &recentMessages, &summary, &userProfile, &preference, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -284,7 +284,7 @@ func (r *ChatRepository) ListMessages(ctx context.Context, userID, sessionID str
 		WHERE s.user_id = $1 AND m.session_id = $2
 	`
 	var total int64
-	if err := r.db.Pool().QueryRow(ctx, countQuery, userID, sessionID).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, countQuery, userID, sessionID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	query := `
@@ -333,7 +333,7 @@ func (r *ChatRepository) SessionExists(ctx context.Context, userID, sessionID st
 	}
 	query := `SELECT 1 FROM chat_session WHERE user_id = $1 AND session_id = $2 LIMIT 1`
 	var one int
-	err := r.db.Pool().QueryRow(ctx, query, userID, sessionID).Scan(&one)
+	err := r.db.QueryRow(ctx, query, userID, sessionID).Scan(&one)
 	if err == pgx.ErrNoRows {
 		return false, nil
 	}
@@ -347,7 +347,7 @@ func (r *ChatRepository) DeleteSession(ctx context.Context, userID, sessionID st
 	if r == nil || r.db == nil {
 		return false, fmt.Errorf("chat repository not ready")
 	}
-	tx, err := r.db.Pool().Begin(ctx)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
