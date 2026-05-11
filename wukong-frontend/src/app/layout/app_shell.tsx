@@ -1,3 +1,4 @@
+import { Bot, Brain, Database, ListTodo, MessageSquarePlus, Trash2 } from 'lucide-react'
 import {
   Brain,
   ChevronRight,
@@ -48,7 +49,6 @@ export function AppShell({ children }: AppShellProps) {
   const setCurrentSession = useAppStore((state) => state.setCurrentSession)
   const createSession = useAppStore((state) => state.createSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
-  const toggleMemory = useAppStore((state) => state.toggleMemory)
   const logout = useAuthStore((state) => state.logout)
 
   const pageTitle =
