@@ -18,6 +18,14 @@ type ApiEnvelope<T> = {
   data?: T
 }
 
+type PageEnvelope<T> = {
+  list?: T[]
+  total?: number
+  page?: number
+  size?: number
+  pages?: number
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAuthToken()
   const response = await fetch(`${API_BASE}${path}`, {
@@ -48,6 +56,32 @@ function pick<T>(row: Record<string, unknown>, keys: string[], fallback: T): T {
     }
   }
   return fallback
+}
+
+function parseTaskList(raw: unknown): TaskItem[] {
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray((raw as { list?: unknown[] })?.list)
+      ? ((raw as { list?: unknown[] }).list ?? [])
+      : []
+  return list.map((item, idx) => {
+    const row = item as Record<string, unknown>
+    const params = pick<Record<string, unknown> | undefined>(row, ['params'], undefined)
+    const title = resolveTaskTitle(row, params)
+    return {
+      taskId: pick(row, ['taskId', 'task_id', 'id'], `task-${idx}`),
+      sessionId: pick<string | undefined>(row, ['sessionId', 'session_id'], undefined),
+      title,
+      status: pick(row, ['status'], 'PENDING'),
+      params,
+      skillName: pick<string | undefined>(row, ['skillName', 'skill_name'], undefined),
+      priority: pick<number | undefined>(row, ['priority'], undefined),
+      result: pick<Record<string, unknown> | undefined>(row, ['result'], undefined),
+      error: pick<string | undefined>(row, ['error'], undefined),
+      createdAt: pick<string | undefined>(row, ['createdAt', 'created_at'], undefined),
+      updatedAt: pick<string | undefined>(row, ['updatedAt', 'updated_at'], undefined),
+    } as TaskItem
+  })
 }
 
 export const api = {
@@ -125,29 +159,36 @@ export const api = {
   },
   async listTasks(): Promise<TaskItem[]> {
     const raw = await request<unknown>('/api/v1/task/list')
-    const list = Array.isArray(raw)
-      ? raw
-      : Array.isArray((raw as { list?: unknown[] })?.list)
-        ? ((raw as { list?: unknown[] }).list ?? [])
-        : []
-    return list.map((item, idx) => {
-      const row = item as Record<string, unknown>
-      const params = pick<Record<string, unknown> | undefined>(row, ['params'], undefined)
-      const title = resolveTaskTitle(row, params)
-      return {
-        taskId: pick(row, ['taskId', 'task_id', 'id'], `task-${idx}`),
-        sessionId: pick<string | undefined>(row, ['sessionId', 'session_id'], undefined),
-        title,
-        status: pick(row, ['status'], 'PENDING'),
-        params,
-        skillName: pick<string | undefined>(row, ['skillName', 'skill_name'], undefined),
-        priority: pick<number | undefined>(row, ['priority'], undefined),
-        result: pick<Record<string, unknown> | undefined>(row, ['result'], undefined),
-        error: pick<string | undefined>(row, ['error'], undefined),
-        createdAt: pick<string | undefined>(row, ['createdAt', 'created_at'], undefined),
-        updatedAt: pick<string | undefined>(row, ['updatedAt', 'updated_at'], undefined),
-      } as TaskItem
-    })
+    return parseTaskList(raw)
+  },
+  async listTasksPage(input: { page?: number; size?: number; status?: string } = {}): Promise<{
+    list: TaskItem[]
+    total: number
+    page: number
+    size: number
+    pages: number
+  }> {
+    const params = new URLSearchParams()
+    if (typeof input.page === 'number') {
+      params.set('page', String(input.page))
+    }
+    if (typeof input.size === 'number') {
+      params.set('size', String(input.size))
+    }
+    if (input.status) {
+      params.set('status', input.status)
+    }
+    const raw = await request<PageEnvelope<unknown>>(
+      `/api/v1/task/list${params.toString() ? `?${params.toString()}` : ''}`,
+    )
+    const list = parseTaskList(raw)
+    return {
+      list,
+      total: raw.total ?? list.length,
+      page: raw.page ?? input.page ?? 1,
+      size: raw.size ?? input.size ?? (list.length || 20),
+      pages: raw.pages ?? 1,
+    }
   },
   async createTask(input: {
     skillName: string
