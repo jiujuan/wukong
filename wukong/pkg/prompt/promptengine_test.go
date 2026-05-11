@@ -132,3 +132,19 @@ func TestEngineRenderTemplateNotFound(t *testing.T) {
 		t.Fatal("Render() error = nil, want not found error")
 	}
 }
+
+func TestNewDefaultEngineRegistersBuiltins(t *testing.T) {
+	engine := NewDefaultEngine()
+	keys := []string{
+		TemplateWorkerActionDefault,
+		TemplateWorkerActionSearch,
+		TemplateWorkerActionReport,
+		TemplateWorkerReactDefault,
+		TemplatePlannerTaskDefault,
+	}
+	for _, key := range keys {
+		if _, ok := engine.Get(key); !ok {
+			t.Fatalf("builtin template %q not registered", key)
+		}
+	}
+}

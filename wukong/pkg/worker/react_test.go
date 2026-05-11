@@ -23,7 +23,7 @@ func TestParseReActReply(t *testing.T) {
 
 func TestBuildReActSystemPrompt(t *testing.T) {
 	prompt := buildReActSystemPrompt("chat", []string{"web_search", "llm_chat"})
-	if !strings.Contains(prompt, "chat") || !strings.Contains(prompt, "web_search") {
+	if !strings.Contains(prompt, "chat") || !strings.Contains(prompt, "web_search") || !strings.Contains(prompt, "final_answer") {
 		t.Fatalf("prompt missing expected content: %s", prompt)
 	}
 }
@@ -78,6 +78,10 @@ func TestReActExecutorExecuteToolAndFinalAnswer(t *testing.T) {
 	}
 	if len(script.requests) != 2 {
 		t.Fatalf("expected two llm calls, got %d", len(script.requests))
+	}
+	firstRequest := script.requests[0]
+	if len(firstRequest.Messages) < 2 || !strings.Contains(firstRequest.Messages[0].Content, "ReAct") {
+		t.Fatalf("expected prompt-engine react system prompt: %#v", firstRequest.Messages)
 	}
 	secondRequest := script.requests[1]
 	foundObservation := false

@@ -9,12 +9,17 @@ import (
 	"time"
 
 	"github.com/jiujuan/wukong/pkg/llm"
+	"github.com/jiujuan/wukong/pkg/prompt"
 	"github.com/jiujuan/wukong/pkg/queue"
 	"github.com/jiujuan/wukong/pkg/skills"
 	"github.com/jiujuan/wukong/pkg/tool"
 )
 
-// executableSubTask 可执行的子任务, 定义了子任务的基本属性和操作
+// executableSubTask 定义子任务进入执行层后的最小协议。
+//
+// 这层故意不直接依赖 manager.SubTask 具体类型，而只依赖几个读写方法，
+// 这样 worker 目录可以把“编排数据模型”和“执行运行时”弱耦合起来：
+// 只要一个对象能提供 action / params / result 这些最小字段，就能被执行。
 type executableSubTask interface {
 	GetSubTaskID() string
 	GetTaskID() string
@@ -25,109 +30,97 @@ type executableSubTask interface {
 	SetUpdatedAt(time.Time)
 }
 
-// PromptBuilder 构建子任务的Prompt消息, 定义了根据子任务的Action执行类型动态选择系统提示模板的方法
-// 实现了PromptBuilder接口的类型, 可以根据子任务的Action执行类型动态选择系统提示模板
-// 并构建出符合要求的Prompt消息
+// PromptBuilder 负责把子任务转换成 LLM 可消费的消息列表。
+//
+// 它是“执行逻辑”和“提示词构造”之间的边界：
+// - 执行器只关心拿到 messages 后去调 LLM
+// - prompt 怎么选模板、怎么拼变量，由 PromptBuilder 处理
 type PromptBuilder interface {
 	BuildMessages(ctx context.Context, subTask executableSubTask) ([]llm.Message, error)
 }
 
+// ActionPromptBuilder 是默认的子任务提示词构造器。
+//
+// 第一层按 action 选择模板 key：
+// - web_search -> 检索模板
+// - report_gen -> 报告模板
+// - 其他 action -> 默认执行模板
+//
+// 第二层再把 subtask 基础字段和 params 派生字段灌入 PromptEngine。
 type ActionPromptBuilder struct {
-	actionSystem  map[string]string
-	defaultSystem string
+	engine      *prompt.Engine
+	templateKey map[string]string
 }
 
-// NewActionPromptBuilder 创建一个新的ActionPromptBuilder实例, Prompt 构建策略, 根据Action执行类型动态选择系统提示模板
 func NewActionPromptBuilder() *ActionPromptBuilder {
 	return &ActionPromptBuilder{
-		actionSystem: map[string]string{
-			"web_search": "你是网络检索执行引擎，优先提取高可信信息并给出结构化结论。",
-			"report_gen": "你是报告生成执行引擎，按结构输出可直接交付的报告内容。",
+		engine: prompt.NewDefaultEngine(),
+		templateKey: map[string]string{
+			"web_search": prompt.TemplateWorkerActionSearch,
+			"report_gen": prompt.TemplateWorkerActionReport,
 		},
-		defaultSystem: "你是可靠的多智能体任务执行引擎。",
 	}
 }
 
-// BuildMessages 构建子任务的Prompt消息, 返回一个包含系统提示和用户提示的消息列表
 func (b *ActionPromptBuilder) BuildMessages(_ context.Context, subTask executableSubTask) ([]llm.Message, error) {
+	if b == nil || b.engine == nil {
+		return nil, fmt.Errorf("prompt engine is nil")
+	}
+
+	// 统一把 params 先序列化成 JSON 字符串，便于模板直接使用。
+	// 如果 params 中有复杂对象，也至少能给模型一个稳定的文本表示。
 	paramsJSON, err := json.Marshal(subTask.GetParams())
 	if err != nil {
 		paramsJSON = []byte("{}")
 	}
-	systemPrompt := b.defaultSystem
-	action := subTask.GetAction()
-	if custom, ok := b.actionSystem[action]; ok {
-		systemPrompt = custom
+
+	// action 模板选择是“特例覆盖默认”的结构：
+	// 低风险 action 直接走专用模板，其余 action 仍可复用统一执行模板。
+	action := strings.ToLower(strings.TrimSpace(subTask.GetAction()))
+	templateKey := prompt.TemplateWorkerActionDefault
+	if custom, ok := b.templateKey[action]; ok {
+		templateKey = custom
 	}
 
-	prompt := fmt.Sprintf(
-		"你是任务执行Worker，请严格执行子任务并输出可直接使用的结果。\n子任务ID: %s\n主任务ID: %s\nAction: %s\nParams(JSON): %s\n要求：\n1. 结果要与Action对应\n2. 输出使用中文\n3. 内容尽量结构化\n4. 不要解释系统实现细节",
-		subTask.GetSubTaskID(),
-		subTask.GetTaskID(),
-		subTask.GetAction(),
-		string(paramsJSON),
-	)
-
-	return []llm.Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: prompt},
-	}, nil
-}
-
-type WebSearchPromptBuilder struct{}
-
-func (b *WebSearchPromptBuilder) BuildMessages(_ context.Context, subTask executableSubTask) ([]llm.Message, error) {
-	paramsJSON, err := json.Marshal(subTask.GetParams())
-	if err != nil {
-		paramsJSON = []byte("{}")
-	}
+	// query / topic 是为了兼容不同 action 的常见参数命名。
+	// 例如 search 可能叫 query/q/topic，report 可能叫 topic/title/subject。
+	// 找不到时回退到 params JSON 或默认主题，避免模板渲染缺参。
 	query := extractStringParam(subTask.GetParams(), "query", "keyword", "q", "topic")
 	if strings.TrimSpace(query) == "" {
 		query = string(paramsJSON)
-	}
-	userPrompt := fmt.Sprintf(
-		"请以web_search执行器模式处理该任务。\n子任务ID: %s\n主任务ID: %s\n查询: %s\n参数: %s\n输出要求：\n1. 返回3-5条关键信息\n2. 每条包含标题、要点、可信度评估\n3. 最后给出综合结论",
-		subTask.GetSubTaskID(),
-		subTask.GetTaskID(),
-		query,
-		string(paramsJSON),
-	)
-	return []llm.Message{
-		{Role: "system", Content: "你是网络检索执行引擎，优先提取高可信信息并给出结构化结论。"},
-		{Role: "user", Content: userPrompt},
-	}, nil
-}
-
-type ReportGenPromptBuilder struct{}
-
-func (b *ReportGenPromptBuilder) BuildMessages(_ context.Context, subTask executableSubTask) ([]llm.Message, error) {
-	paramsJSON, err := json.Marshal(subTask.GetParams())
-	if err != nil {
-		paramsJSON = []byte("{}")
 	}
 	topic := extractStringParam(subTask.GetParams(), "topic", "title", "subject", "query")
 	if strings.TrimSpace(topic) == "" {
 		topic = "未指定主题"
 	}
-	userPrompt := fmt.Sprintf(
-		"请以report_gen执行器模式处理该任务。\n子任务ID: %s\n主任务ID: %s\n报告主题: %s\n参数: %s\n输出要求：\n1. 包含摘要、背景、分析、建议、结论\n2. 结构化分节输出\n3. 适合直接交付",
-		subTask.GetSubTaskID(),
-		subTask.GetTaskID(),
-		topic,
-		string(paramsJSON),
-	)
-	return []llm.Message{
-		{Role: "system", Content: "你是报告生成执行引擎，按结构输出可直接交付的报告内容。"},
-		{Role: "user", Content: userPrompt},
-	}, nil
+	return b.engine.Render(templateKey, prompt.RenderInput{
+		Variables: map[string]any{
+			"sub_task_id": subTask.GetSubTaskID(),
+			"task_id":     subTask.GetTaskID(),
+			"action":      subTask.GetAction(),
+			"params_json": string(paramsJSON),
+			"query":       query,
+			"topic":       topic,
+		},
+	})
 }
 
-// ActionExecutor 执行子任务的接口, 定义了执行子任务的方法
+// ActionExecutor 表示真正执行某类 action 的策略对象。
+//
+// 当前实现里至少有三类：
+// - 纯 LLM 执行
+// - 工具执行
+// - ReAct / 组合执行
+//
+// SubTaskExecutor 只做路由，不关心底层到底如何完成 action。
 type ActionExecutor interface {
 	Execute(ctx context.Context, subTask executableSubTask) (map[string]any, error)
 }
 
-// LLMActionExecutor 基于LLM的子任务执行器, 实现了ActionExecutor接口
+// LLMActionExecutor 是最基础的 action 执行器：
+// 1. 用 PromptBuilder 构造消息
+// 2. 调用 Provider.Chat
+// 3. 把 LLM 输出包装成统一结果
 type LLMActionExecutor struct {
 	provider      *llm.Provider
 	promptBuilder PromptBuilder
@@ -143,9 +136,6 @@ func NewLLMActionExecutor(provider *llm.Provider, promptBuilder PromptBuilder) *
 	}
 }
 
-// Execute 执行子任务, 返回执行结果
-// 根据子任务的Action执行类型动态选择系统提示模板
-// 并构建出符合要求的Prompt消息
 func (e *LLMActionExecutor) Execute(ctx context.Context, subTask executableSubTask) (map[string]any, error) {
 	if e.provider == nil {
 		return nil, fmt.Errorf("llm provider is nil")
@@ -154,6 +144,8 @@ func (e *LLMActionExecutor) Execute(ctx context.Context, subTask executableSubTa
 	if err != nil {
 		return nil, fmt.Errorf("build prompt failed: %w", err)
 	}
+	// 执行层返回的不只是 output，还会带上 model 和 usage，
+	// 这样上层聚合或调试时能看到一次子任务实际消耗了什么。
 	resp, err := e.provider.Chat(ctx, messages)
 	if err != nil {
 		return nil, fmt.Errorf("llm execute subtask failed: %w", err)
@@ -178,6 +170,11 @@ type SubTaskExecutor struct {
 	actionExecutors map[string]ActionExecutor
 }
 
+// NewSubTaskExecutor 创建“纯本地路由”的子任务执行器。
+//
+// 路由策略：
+// - 如果 action 有显式注册执行器，则用专用执行器
+// - 否则走 defaultExecutor
 func NewSubTaskExecutor(provider *llm.Provider, logger *slog.Logger, promptBuilder PromptBuilder) *SubTaskExecutor {
 	defaultExecutor := NewLLMActionExecutor(provider, promptBuilder)
 	actionExecutors := defaultActionExecutors(provider, nil)
@@ -188,6 +185,10 @@ func NewSubTaskExecutor(provider *llm.Provider, logger *slog.Logger, promptBuild
 	}
 }
 
+// NewSubTaskExecutorWithTools 在默认路由基础上，把 ReAct 和工具能力接进来。
+//
+// 这里让 web_search / report_gen 默认走 reactExecutor，
+// 是因为这两类 action 天然受益于“先思考，再决定是否调工具，再输出”的链路。
 func NewSubTaskExecutorWithTools(provider *llm.Provider, logger *slog.Logger, promptBuilder PromptBuilder, toolManager *tool.Manager, skillRegistry *skills.Registry) *SubTaskExecutor {
 	reactExecutor := NewReActExecutor(provider, toolManager, skillRegistry, logger)
 	defaultExecutor := reactExecutor
@@ -201,8 +202,12 @@ func NewSubTaskExecutorWithTools(provider *llm.Provider, logger *slog.Logger, pr
 	}
 }
 
-// Handle 处理子任务
-// 根据Action执行类型动态选择系统提示模板
+// Handle 是 Pool.taskHandler 最常落到的业务入口。
+//
+// 它做三件事：
+// 1. 从 queue.Task 中取出 executableSubTask
+// 2. 根据 action 路由到具体执行器
+// 3. 把结果写回 subTask，供 Manager 回调时读取
 func (e *SubTaskExecutor) Handle(ctx context.Context, task *queue.Task) error {
 	subTask, ok := task.Data.(executableSubTask)
 	if !ok || subTask == nil {
@@ -216,6 +221,10 @@ func (e *SubTaskExecutor) Handle(ctx context.Context, task *queue.Task) error {
 	if executor == nil {
 		return fmt.Errorf("no action executor for action=%s", action)
 	}
+
+	// 结果写回 subtask 是这里非常关键的一步：
+	// WorkerPool 本身不理解业务结果，只会在 executeTask 结束后通过 extractResult
+	// 从 task.Data 里把结果拿出来，再回调给 Manager。
 	result, err := executor.Execute(ctx, subTask)
 	if err != nil {
 		return err
@@ -237,6 +246,8 @@ func (e *SubTaskExecutor) Handle(ctx context.Context, task *queue.Task) error {
 	return nil
 }
 
+// RegisterActionExecutor 允许在默认路由表之外追加或覆盖某个 action 的执行策略。
+// 这使得 worker 层可以在不改 Handle 主流程的情况下逐步扩展新的 action。
 func (e *SubTaskExecutor) RegisterActionExecutor(action string, executor ActionExecutor) {
 	key := strings.ToLower(strings.TrimSpace(action))
 	if key == "" || executor == nil {
@@ -248,6 +259,15 @@ func (e *SubTaskExecutor) RegisterActionExecutor(action string, executor ActionE
 	e.actionExecutors[key] = executor
 }
 
+// NewRoutedSubTaskHandler / NewRoutedSubTaskHandlerWithTools / NewLLMSubTaskHandler
+// 是给 Pool 注入 taskHandler 的便捷工厂。
+//
+// 调用方通常不直接手写 TaskHandler，而是通过这些 helper 把：
+// - provider
+// - logger
+// - toolManager
+// - skillRegistry
+// 组装成一个完整的“子任务执行入口”。
 func NewRoutedSubTaskHandler(provider *llm.Provider, logger *slog.Logger) TaskHandler {
 	executor := NewSubTaskExecutor(provider, logger, NewActionPromptBuilder())
 	return executor.Handle
@@ -262,6 +282,10 @@ func NewLLMSubTaskHandler(provider *llm.Provider, logger *slog.Logger) TaskHandl
 	return NewRoutedSubTaskHandler(provider, logger)
 }
 
+// extractStringParam 是执行层的一个小兼容工具。
+//
+// 原因是不同 planner / tool / caller 传入的 params 命名不总是稳定，
+// 这里通过一组候选 key 兜底，减少上层参数命名抖动对执行链路的影响。
 func extractStringParam(params map[string]any, keys ...string) string {
 	for _, k := range keys {
 		v, ok := params[k]
@@ -283,22 +307,35 @@ func extractStringParam(params map[string]any, keys ...string) string {
 	return ""
 }
 
+// defaultActionExecutors 返回默认 action -> executor 路由表。
+//
+// 设计上这里用了“按能力增强”的两层逻辑：
+// - 没有 toolManager：web_search / report_gen 走 LLM 执行
+// - 有 toolManager：优先走工具，必要时回退到 LLM
+//
+// 这样同一批 action 可以在不同运行环境下自然获得不同执行能力。
 func defaultActionExecutors(provider *llm.Provider, toolManager *tool.Manager) map[string]ActionExecutor {
+	buildPrompt := NewActionPromptBuilder()
 	executors := map[string]ActionExecutor{
-		"report_gen": NewLLMActionExecutor(provider, &ReportGenPromptBuilder{}),
+		"report_gen": NewLLMActionExecutor(provider, buildPrompt),
 	}
 	if toolManager != nil {
 		executors["web_search"] = NewToolActionExecutor(toolManager, "web_search", "web_search")
 		executors["report_gen"] = NewCompositeActionExecutor(
 			NewToolActionExecutor(toolManager, "report_gen", "llm_chat"),
-			NewLLMActionExecutor(provider, &ReportGenPromptBuilder{}),
+			NewLLMActionExecutor(provider, buildPrompt),
 		)
 		return executors
 	}
-	executors["web_search"] = NewLLMActionExecutor(provider, &WebSearchPromptBuilder{})
+	executors["web_search"] = NewLLMActionExecutor(provider, buildPrompt)
 	return executors
 }
 
+// ToolActionExecutor 代表“直接调用某个工具完成 action”。
+//
+// 它适合 action 和 tool 几乎一一对应的场景，例如：
+// - web_search -> web_search tool
+// - report_gen -> llm_chat tool
 type ToolActionExecutor struct {
 	toolManager *tool.Manager
 	skillName   string
@@ -317,14 +354,17 @@ func (e *ToolActionExecutor) Execute(ctx context.Context, subTask executableSubT
 	if e.toolManager == nil {
 		return nil, fmt.Errorf("tool manager is nil")
 	}
+
+	// search 类 action 在很多地方只传 prompt/topic/title，不一定显式给 query。
+	// 这里执行前补齐 query，避免工具层因为缺少标准参数而失败。
 	params := subTask.GetParams()
 	if params == nil {
 		params = map[string]any{}
 	}
 	if _, ok := params["query"]; !ok && strings.EqualFold(e.toolName, "web_search") {
-		prompt := extractStringParam(params, "prompt", "topic", "title")
-		if strings.TrimSpace(prompt) != "" {
-			params["query"] = prompt
+		promptValue := extractStringParam(params, "prompt", "topic", "title")
+		if strings.TrimSpace(promptValue) != "" {
+			params["query"] = promptValue
 		}
 	}
 	result, err := e.toolManager.ExecuteForSkill(ctx, e.skillName, e.toolName, params)
@@ -338,6 +378,13 @@ func (e *ToolActionExecutor) Execute(ctx context.Context, subTask executableSubT
 	return result, nil
 }
 
+// CompositeActionExecutor 表示“先试 primary，失败后走 fallback”。
+//
+// 目前主要用于：
+// - 优先调用工具
+// - 工具失败时退回到 LLM
+//
+// 这样比单一路径更稳，也更方便渐进增强执行能力。
 type CompositeActionExecutor struct {
 	primary  ActionExecutor
 	fallback ActionExecutor
@@ -360,6 +407,14 @@ func (e *CompositeActionExecutor) Execute(ctx context.Context, subTask executabl
 	return e.fallback.Execute(ctx, subTask)
 }
 
+// SkillAwareActionExecutor 是更高一层的策略执行器：
+// 它会优先根据 skill/tool 信息选择更具体的执行路径，
+// 如果都不满足，再回退到通用执行器。
+//
+// 优先级顺序：
+// 1. toolManager 中存在显式 tool
+// 2. skillRegistry 中存在可执行 skill
+// 3. fallback
 type SkillAwareActionExecutor struct {
 	toolManager   *tool.Manager
 	skillRegistry *skills.Registry
@@ -403,6 +458,10 @@ func (e *SkillAwareActionExecutor) Execute(ctx context.Context, subTask executab
 	return e.fallback.Execute(ctx, subTask)
 }
 
+// resolveSkillName / resolveToolName 是执行路由层的关键归一化函数。
+//
+// 它们的目标不是“绝对正确地理解业务语义”，而是给执行器一个稳定的默认路由依据，
+// 让不同来源的 action / params 能收敛到较少的 skill/tool 名称上。
 func resolveSkillName(action string, params map[string]any) string {
 	if name := extractStringParam(params, "skill_name", "skill", "skillName"); strings.TrimSpace(name) != "" {
 		return strings.ToLower(strings.TrimSpace(name))
@@ -430,6 +489,8 @@ func resolveToolName(action string, params map[string]any) string {
 	}
 }
 
+// cloneParams 避免执行器在补参数、改参数时直接污染原始 subtask params。
+// 这在工具执行和 ReAct 多轮执行里尤其重要。
 func cloneParams(src map[string]any) map[string]any {
 	if src == nil {
 		return map[string]any{}

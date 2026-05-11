@@ -2,8 +2,10 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jiujuan/wukong/pkg/llm"
@@ -39,6 +41,33 @@ func TestLLMPlannerFallbackWhenProviderNil(t *testing.T) {
 		t.Fatalf("plan should fallback without error: %v", err)
 	}
 	assertSearchTemplateFallback(t, defs)
+}
+
+func TestLLMPlannerUsesPromptEngineMessages(t *testing.T) {
+	server, requests := newPlannerCaptureServer(t, `{"thought":"plan","steps":[{"id":"s1","action":"web_search","params":{"query":"ai agent"},"depends_on":[],"thought":"search first"}]}`)
+	provider := llm.New(
+		llm.WithProviderType(llm.ProviderTypeOpenAPI),
+		llm.WithBaseURL(server.URL),
+		llm.WithModel("test-model"),
+	)
+	planner := NewLLMPlanner(provider, NewTplPlanner())
+
+	defs, err := planner.PlanSubTasks(context.Background(), newSearchTask())
+	if err != nil {
+		t.Fatalf("plan failed: %v", err)
+	}
+	if len(defs) != 1 || defs[0].Action != "web_search" {
+		t.Fatalf("unexpected defs: %#v", defs)
+	}
+	if len(*requests) != 1 || len((*requests)[0].Messages) != 2 {
+		t.Fatalf("unexpected llm requests: %#v", *requests)
+	}
+	if (*requests)[0].Messages[0].Role != "system" || (*requests)[0].Messages[1].Role != "user" {
+		t.Fatalf("unexpected planner messages: %#v", (*requests)[0].Messages)
+	}
+	if (*requests)[0].Messages[1].Content == "" || !containsAll((*requests)[0].Messages[1].Content, []string{"task_id=task_test_1", "skill=search"}) {
+		t.Fatalf("unexpected planner user prompt: %q", (*requests)[0].Messages[1].Content)
+	}
 }
 
 func newSearchTask() *Task {
@@ -97,4 +126,29 @@ func quoteJSONString(raw string) string {
 	}
 	b = append(b, '"')
 	return string(b)
+}
+
+func newPlannerCaptureServer(t *testing.T, content string) (*httptest.Server, *[]llm.ChatRequest) {
+	t.Helper()
+	requests := make([]llm.ChatRequest, 0, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req llm.ChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request failed: %v", err)
+		}
+		requests = append(requests, req)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"cmpl_test","object":"chat.completion","created":1,"model":"test-model","choices":[{"index":0,"message":{"role":"assistant","content":` + quoteJSONString(content) + `},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	t.Cleanup(server.Close)
+	return server, &requests
+}
+
+func containsAll(raw string, parts []string) bool {
+	for _, part := range parts {
+		if !strings.Contains(raw, part) {
+			return false
+		}
+	}
+	return true
 }

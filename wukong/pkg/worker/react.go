@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jiujuan/wukong/pkg/llm"
+	"github.com/jiujuan/wukong/pkg/prompt"
 	"github.com/jiujuan/wukong/pkg/skills"
 	"github.com/jiujuan/wukong/pkg/tool"
 )
@@ -38,6 +39,7 @@ type ReActExecutor struct {
 	skillRegistry *skills.Registry
 	logger        *slog.Logger
 	maxIterations int
+	promptEngine  *prompt.Engine
 }
 
 func NewReActExecutor(provider *llm.Provider, toolManager *tool.Manager, skillRegistry *skills.Registry, logger *slog.Logger) *ReActExecutor {
@@ -50,6 +52,7 @@ func NewReActExecutor(provider *llm.Provider, toolManager *tool.Manager, skillRe
 		skillRegistry: skillRegistry,
 		logger:        logger,
 		maxIterations: 6,
+		promptEngine:  prompt.NewDefaultEngine(),
 	}
 }
 
@@ -67,14 +70,20 @@ func (e *ReActExecutor) Execute(ctx context.Context, subTask executableSubTask) 
 		}
 	}
 
-	systemPrompt := buildReActSystemPrompt(skillName, allowedTools)
 	paramsJSON, _ := json.Marshal(params)
-	userPrompt := fmt.Sprintf("sub_task_id=%s\ntask_id=%s\naction=%s\nparams=%s\ntool_hint=%s",
-		subTask.GetSubTaskID(), subTask.GetTaskID(), subTask.GetAction(), string(paramsJSON), toolNameHint)
-
-	messages := []llm.Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: userPrompt},
+	messages, err := e.promptEngine.Render(prompt.TemplateWorkerReactDefault, prompt.RenderInput{
+		Variables: map[string]any{
+			"skill_name":         skillName,
+			"allowed_tools_json": mustJSON(allowedTools),
+			"sub_task_id":        subTask.GetSubTaskID(),
+			"task_id":            subTask.GetTaskID(),
+			"action":             subTask.GetAction(),
+			"params_json":        string(paramsJSON),
+			"tool_name_hint":     toolNameHint,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("render react prompt failed: %w", err)
 	}
 	steps := make([]ReActStep, 0, e.maxIterations)
 
@@ -197,11 +206,22 @@ func (e *ReActExecutor) allowedTools(skillName string) []string {
 }
 
 func buildReActSystemPrompt(skillName string, allowedTools []string) string {
-	toolsJSON, _ := json.Marshal(allowedTools)
-	return "你是ReAct执行引擎。必须只输出JSON，不要输出其他文本。JSON格式为: " +
-		`{"thought":"...","action":"tool|final","tool_name":"...","tool_params":{},"final_answer":"..."}` +
-		"。当 action=tool 时必须给出 tool_name 和 tool_params；当 action=final 时给出 final_answer。当前 skill=" +
-		skillName + "，允许工具白名单=" + string(toolsJSON)
+	engine := prompt.NewDefaultEngine()
+	msgs, err := engine.Render(prompt.TemplateWorkerReactDefault, prompt.RenderInput{
+		Variables: map[string]any{
+			"skill_name":         skillName,
+			"allowed_tools_json": mustJSON(allowedTools),
+			"sub_task_id":        "sub_task_id",
+			"task_id":            "task_id",
+			"action":             "action",
+			"params_json":        "{}",
+			"tool_name_hint":     "",
+		},
+	})
+	if err != nil || len(msgs) == 0 {
+		return ""
+	}
+	return msgs[0].Content
 }
 
 func parseReActReply(raw string) (*reactLLMReply, error) {
@@ -215,4 +235,12 @@ func parseReActReply(raw string) (*reactLLMReply, error) {
 		return nil, err
 	}
 	return reply, nil
+}
+
+func mustJSON(v any) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(data)
 }
