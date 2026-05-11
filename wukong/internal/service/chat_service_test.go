@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jiujuan/wukong/internal/model"
+	ctxengine "github.com/jiujuan/wukong/pkg/context"
 	"github.com/jiujuan/wukong/pkg/llm"
 )
 
@@ -138,6 +139,80 @@ func addChatMessage(r *fakeChatRepo, sessionID, userID, role, content string) {
 	})
 }
 
+func TestChatHistorySourceLoadsOrderedMessages(t *testing.T) {
+	repo := newFakeChatRepo()
+	sessionID := "session-source-history"
+	userID := "user-source-history"
+	repo.sessions[sessionID] = &model.ChatSession{SessionID: sessionID, UserID: userID}
+	addChatMessage(repo, sessionID, userID, "user", "first")
+	addChatMessage(repo, sessionID, userID, "assistant", "second")
+	addChatMessage(repo, sessionID, userID, "user", "current")
+
+	source := &ChatHistorySource{repo: repo}
+	blocks, err := source.Load(context.Background(), ctxengine.BuildRequest{
+		Scene:     chatSceneName,
+		UserID:    userID,
+		SessionID: sessionID,
+		Variables: map[string]any{
+			"current_msg_id": repo.messages[sessionID][2].MsgID,
+			"history_limit":  5,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("len(blocks) = %d, want 2", len(blocks))
+	}
+	if blocks[0].Type != "user" || blocks[0].Content != "first" {
+		t.Fatalf("unexpected first block: %+v", blocks[0])
+	}
+	if blocks[1].Type != "assistant" || blocks[1].Content != "second" {
+		t.Fatalf("unexpected second block: %+v", blocks[1])
+	}
+}
+
+func TestChatMemorySourceLoadsMemoryBlocks(t *testing.T) {
+	repo := newFakeChatRepo()
+	sessionID := "session-source-memory"
+	userID := "user-source-memory"
+	recent, err := json.Marshal([]chatMemoryMessage{
+		{Role: "user", Content: "memory-user"},
+		{Role: "assistant", Content: "memory-assistant"},
+	})
+	if err != nil {
+		t.Fatalf("marshal recent memory failed: %v", err)
+	}
+	repo.memories[sessionID] = &model.ChatMemory{
+		SessionID:      sessionID,
+		UserID:         userID,
+		Summary:        "summary text",
+		UserProfile:    []byte(`{"name":"Ada"}`),
+		Preference:     []byte(`{"tone":"direct"}`),
+		RecentMessages: recent,
+	}
+
+	source := &ChatMemorySource{repo: repo}
+	blocks, err := source.Load(context.Background(), ctxengine.BuildRequest{
+		Scene:     chatSceneName,
+		UserID:    userID,
+		SessionID: sessionID,
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(blocks) < 4 {
+		t.Fatalf("expected multiple memory blocks, got %d", len(blocks))
+	}
+	text := blockContent(blocks, chatContextBlockMemoryText)
+	if !strings.Contains(text, "会话记忆") || !strings.Contains(text, "summary text") {
+		t.Fatalf("memory text block missing content: %q", text)
+	}
+	if blockContent(blocks, chatContextBlockRecentHistory) == "" {
+		t.Fatalf("expected recent history block")
+	}
+}
+
 func TestChatServiceSendMessageBuildsMultiturnContext(t *testing.T) {
 	repo := newFakeChatRepo()
 	sessionID := "session-1"
@@ -146,7 +221,7 @@ func TestChatServiceSendMessageBuildsMultiturnContext(t *testing.T) {
 	repo.memories[sessionID] = &model.ChatMemory{
 		SessionID:   sessionID,
 		UserID:      userID,
-		Summary:     "上一次我们在讨论产品路线。",
+		Summary:     "we discussed the product roadmap",
 		UserProfile: []byte(`{"name":"Ada","role":"builder"}`),
 		Preference:  []byte(`{"tone":"direct"}`),
 	}
@@ -168,10 +243,10 @@ func TestChatServiceSendMessageBuildsMultiturnContext(t *testing.T) {
 	if len(llmClient.messages) != 7 {
 		t.Fatalf("unexpected llm message count: %d", len(llmClient.messages))
 	}
-	if llmClient.messages[0].Role != "system" || !strings.Contains(llmClient.messages[0].Content, "会话记忆") {
+	if llmClient.messages[0].Role != "system" {
 		t.Fatalf("system prompt missing: %+v", llmClient.messages[0])
 	}
-	if llmClient.messages[1].Role != "system" || !strings.Contains(llmClient.messages[1].Content, "上一次我们在讨论产品路线") {
+	if llmClient.messages[1].Role != "system" || !strings.Contains(llmClient.messages[1].Content, "we discussed the product roadmap") {
 		t.Fatalf("memory prompt missing: %+v", llmClient.messages[1])
 	}
 	if llmClient.messages[2].Content != "hello" || llmClient.messages[5].Content != "not much" {
@@ -389,4 +464,13 @@ func containsLLMMessage(messages []llm.Message, role, content string) bool {
 		}
 	}
 	return false
+}
+
+func blockContent(blocks []ctxengine.ContextBlock, name string) string {
+	for _, block := range blocks {
+		if block.Name == name {
+			return block.Content
+		}
+	}
+	return ""
 }

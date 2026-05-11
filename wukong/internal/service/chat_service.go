@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/jiujuan/wukong/internal/model"
+	ctxengine "github.com/jiujuan/wukong/pkg/context"
 	"github.com/jiujuan/wukong/pkg/errors"
 	"github.com/jiujuan/wukong/pkg/llm"
+	"github.com/jiujuan/wukong/pkg/prompt"
 	"github.com/jiujuan/wukong/pkg/uuid"
 )
 
@@ -37,6 +39,8 @@ type ChatService struct {
 	repo          chatRepository
 	llmProvider   chatLLM
 	streamService *StreamService
+	promptEngine  *prompt.Engine
+	contextEngine *ctxengine.Engine
 }
 
 func NewChatService(repo chatRepository, llmProvider *llm.Provider, streamService *StreamService) *ChatService {
@@ -44,6 +48,8 @@ func NewChatService(repo chatRepository, llmProvider *llm.Provider, streamServic
 		repo:          repo,
 		llmProvider:   llmProvider,
 		streamService: streamService,
+		promptEngine:  prompt.NewDefaultEngine(),
+		contextEngine: newChatContextEngine(repo),
 	}
 }
 
@@ -191,41 +197,59 @@ const (
 	chatRecentHistoryLimit = 12
 	chatMemoryWindowLimit  = 12
 	chatSummarySourceLimit = 20
-	chatSystemPrompt       = "你是 Wukong 的对话助手。请结合会话记忆和历史对话回答。若记忆与历史冲突，以更近的消息为准。"
 )
 
 func (s *ChatService) buildLLMMessages(ctx context.Context, userID, sessionID, currentMsgID, content string) []llm.Message {
-	messages := make([]llm.Message, 0, 16)
-	messages = append(messages, llm.Message{Role: "system", Content: chatSystemPrompt})
+	s.ensureEngines()
 
-	memory := s.loadChatMemory(ctx, userID, sessionID)
-	if memory != nil {
-		if memoryText := renderChatMemory(memory); memoryText != "" {
-			messages = append(messages, llm.Message{Role: "system", Content: memoryText})
-		}
+	bundle, err := s.contextEngine.Build(ctx, ctxengine.BuildRequest{
+		Scene:     chatSceneName,
+		UserID:    userID,
+		SessionID: sessionID,
+		Query:     content,
+		Variables: map[string]any{
+			"current_msg_id": currentMsgID,
+			"history_limit":  chatRecentHistoryLimit + 1,
+		},
+	})
+	if err != nil {
+		return []llm.Message{{Role: "user", Content: strings.TrimSpace(content)}}
 	}
 
-	if history := s.loadRecentMessages(ctx, userID, sessionID, chatRecentHistoryLimit+1); len(history) > 0 {
-		for _, item := range history {
-			if item == nil || item.MsgID == currentMsgID {
-				continue
-			}
-			role := normalizeChatRole(item.Role)
-			if role == "" {
-				continue
-			}
-			msgContent := strings.TrimSpace(item.Content)
-			if msgContent == "" {
-				continue
-			}
-			messages = append(messages, llm.Message{Role: role, Content: msgContent})
-		}
-	} else if memory != nil {
-		messages = append(messages, recentMessagesFromMemory(memory)...)
+	baseMessages, err := s.promptEngine.Render(prompt.TemplateChatSessionDefault, prompt.RenderInput{
+		Variables: map[string]any{
+			"memory_text":          memoryTextFromBundle(bundle),
+			"current_user_message": strings.TrimSpace(content),
+		},
+	})
+	if err != nil || len(baseMessages) == 0 {
+		return []llm.Message{{Role: "user", Content: strings.TrimSpace(content)}}
 	}
 
-	messages = append(messages, llm.Message{Role: "user", Content: strings.TrimSpace(content)})
+	messages := make([]llm.Message, 0, len(baseMessages)+len(bundle.Blocks))
+	for _, item := range filterPromptMessages(baseMessages[:len(baseMessages)-1]) {
+		messages = append(messages, item)
+	}
+	for _, item := range historyMessagesFromBundle(bundle) {
+		messages = append(messages, llm.Message{Role: item.Role, Content: item.Content})
+	}
+	last := baseMessages[len(baseMessages)-1]
+	if strings.TrimSpace(last.Role) != "" && strings.TrimSpace(last.Content) != "" {
+		messages = append(messages, last)
+	}
 	return messages
+}
+
+func (s *ChatService) ensureEngines() {
+	if s == nil {
+		return
+	}
+	if s.promptEngine == nil {
+		s.promptEngine = prompt.NewDefaultEngine()
+	}
+	if s.contextEngine == nil {
+		s.contextEngine = newChatContextEngine(s.repo)
+	}
 }
 
 func (s *ChatService) streamChatReply(ctx context.Context, sessionID string, messages []llm.Message, streamer chatStreamer) (string, error) {
@@ -317,6 +341,17 @@ func recentMessagesFromMemory(memory *model.ChatMemory) []llm.Message {
 		messages = append(messages, llm.Message{Role: role, Content: content})
 	}
 	return messages
+}
+
+func filterPromptMessages(list []llm.Message) []llm.Message {
+	out := make([]llm.Message, 0, len(list))
+	for _, item := range list {
+		if strings.TrimSpace(item.Role) == "" || strings.TrimSpace(item.Content) == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 type chatMemoryMessage struct {

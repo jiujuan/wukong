@@ -141,6 +141,7 @@ func TestNewDefaultEngineRegistersBuiltins(t *testing.T) {
 		TemplateWorkerActionReport,
 		TemplateWorkerReactDefault,
 		TemplatePlannerTaskDefault,
+		TemplateChatSessionDefault,
 	}
 	for _, key := range keys {
 		if _, ok := engine.Get(key); !ok {
