@@ -2,13 +2,16 @@
 @import "highlight.js/styles/github-dark.css";
 
 :root {
-  --background: #ffffff;
-  --foreground: #111111;
+  --background: #f7f8fb;
+  --foreground: #1f2430;
   --card: #ffffff;
-  --muted: #6b7280;
-  --border: #d4d4d8;
-  --accent: #111111;
+  --muted: #7b8190;
+  --border: #e6e8ef;
+  --accent: #635bff;
   --accent-foreground: #ffffff;
+  --accent-soft: #efedff;
+  --surface: #f9fafc;
+  --shadow: 0 14px 36px rgba(31, 36, 48, 0.07);
 }
 
 * {
@@ -21,8 +24,38 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
 }
 
 #root {
   min-height: 100vh;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d7dae5;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #c5cada;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }

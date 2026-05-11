@@ -4,8 +4,6 @@
 -- 适用于: v0.1 及以上版本
 -- ========================================
 
--- 数据库名 wukong_agents_db
-
 -- 用户表
 DROP TABLE IF EXISTS users CASCADE;
 CREATE TABLE users (
