@@ -101,7 +101,6 @@ func TestPoolCancel(t *testing.T) {
 	pool := New(
 		WithWorkerCount(1),
 		WithTaskHandler(func(ctx context.Context, task *queue.Task) error {
-			time.Sleep(10 * time.Second)
 			return nil
 		}),
 	)
@@ -113,7 +112,9 @@ func TestPoolCancel(t *testing.T) {
 		Priority: 5,
 	}
 
-	pool.Submit(task)
+	if !pool.SubmitDelay(task, 10*time.Second) {
+		t.Fatal("SubmitDelay() should return true")
+	}
 
 	if !pool.Cancel("task1") {
 		t.Error("Cancel() should return true")
@@ -122,6 +123,49 @@ func TestPoolCancel(t *testing.T) {
 	if pool.GetTaskState("task1") != "CANCELLED" {
 		t.Error("Task state should be CANCELLED after Cancel()")
 	}
+}
+
+func TestPoolCancelMissAfterPickup(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+
+	pool := New(
+		WithWorkerCount(1),
+		WithTaskHandler(func(ctx context.Context, task *queue.Task) error {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-release:
+				return nil
+			}
+		}),
+	)
+	pool.Start()
+	defer pool.Stop()
+
+	task := &queue.Task{
+		TaskID:   "task-running",
+		Priority: 5,
+	}
+	if !pool.Submit(task) {
+		t.Fatal("Submit() should return true")
+	}
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not start task in time")
+	}
+
+	if pool.Cancel("task-running") {
+		t.Fatal("Cancel() should return false after the task has been picked up")
+	}
+
+	close(release)
 }
 
 func TestPoolIdempotent(t *testing.T) {

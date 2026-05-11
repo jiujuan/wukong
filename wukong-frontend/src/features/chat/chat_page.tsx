@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Bot, Loader2, Send, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -10,6 +11,7 @@ import { useAppStore } from '@/store/use_app_store'
 
 export function ChatPage() {
   const [input, setInput] = useState('')
+  const [isResponding, setIsResponding] = useState(false)
   const typingRef = useRef<number | null>(null)
   const chunkQueueRef = useRef<string[]>([])
   const draftRef = useRef('')
@@ -26,17 +28,30 @@ export function ChatPage() {
     [currentSessionId, messagesBySession],
   )
 
+  const stopTyping = useCallback(() => {
+    chunkQueueRef.current = []
+    draftRef.current = ''
+    if (typingRef.current) {
+      window.clearInterval(typingRef.current)
+      typingRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
     if (!currentSessionId) {
+      setIsResponding(false)
+      stopTyping()
       return
     }
     loadMessages(currentSessionId).catch((error: Error) => {
       toast.error(error.message)
     })
-  }, [currentSessionId, loadMessages])
+  }, [currentSessionId, loadMessages, stopTyping])
 
   useEffect(() => {
     if (!currentSessionId) {
+      setIsResponding(false)
+      stopTyping()
       return
     }
     const close = createSSE(
@@ -47,6 +62,7 @@ export function ChatPage() {
           if (event.content) {
             chunkQueueRef.current.push(event.content)
           }
+          setIsResponding(true)
           if (!typingRef.current) {
             typingRef.current = window.setInterval(() => {
               const queue = chunkQueueRef.current
@@ -74,29 +90,25 @@ export function ChatPage() {
             draftRef.current += chunkQueueRef.current.join('')
             updateLastAssistantMessage(currentSessionId, draftRef.current)
           }
-          chunkQueueRef.current = []
-          if (typingRef.current) {
-            window.clearInterval(typingRef.current)
-            typingRef.current = null
-          }
-          draftRef.current = ''
+          stopTyping()
+          setIsResponding(false)
         }
       },
       () => {
-        toast.warning('对话流已断开，正在等待重连')
+        toast.warning('对话流已断开，正在等待重连。')
+        setIsResponding(false)
+        stopTyping()
       },
     )
     return () => {
       close()
-      if (typingRef.current) {
-        window.clearInterval(typingRef.current)
-        typingRef.current = null
-      }
+      stopTyping()
+      setIsResponding(false)
     }
-  }, [currentSessionId, updateLastAssistantMessage])
+  }, [currentSessionId, stopTyping, updateLastAssistantMessage])
 
   const submit = async () => {
-    if (!input.trim()) {
+    if (!input.trim() || isResponding) {
       return
     }
     let sessionId = currentSessionId
@@ -121,45 +133,103 @@ export function ChatPage() {
       role: 'assistant',
       content: '',
     })
-    draftRef.current = ''
+    stopTyping()
+    setIsResponding(true)
     try {
       await api.sendMessage(sessionId, content)
     } catch (error) {
+      setIsResponding(false)
+      stopTyping()
       toast.error((error as Error).message)
     }
   }
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <Card className="flex-1 overflow-auto p-4">
-        {!currentSessionId ? (
-          <div className="text-zinc-500">请输入内容并发送，系统会自动创建会话</div>
-        ) : (
-          <div className="space-y-4">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`max-w-[85%] rounded-lg border p-3 ${
-                  message.role === 'user'
-                    ? 'ml-auto border-zinc-300 bg-zinc-100 text-zinc-900'
-                    : 'border-zinc-300 bg-white text-zinc-900'
-                }`}
-              >
-                <div className="mb-2 text-xs uppercase tracking-wide opacity-70">
-                  {message.role === 'user' ? '你' : 'Wukong'}
-                </div>
-                <MarkdownView content={message.content || '...'} />
-              </div>
-            ))}
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="border-b border-zinc-100 px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-zinc-900">晴景助手</div>
+              <div className="mt-1 text-xs text-zinc-400">轻量对话模式，实时生成回复</div>
+            </div>
+            <div className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-600">
+              Online
+            </div>
           </div>
-        )}
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto bg-gradient-to-b from-white to-zinc-50/80 p-5">
+          {!currentSessionId ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="max-w-sm text-center">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-500">
+                  <Bot className="h-6 w-6" />
+                </div>
+                <div className="text-base font-semibold text-zinc-900">开始一个新会话</div>
+                <div className="mt-2 text-sm leading-6 text-zinc-500">
+                  输入问题后系统会自动创建会话，并在左侧列表中保留记录。
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messages.map((message, index) => {
+                const isUser = message.role === 'user'
+                const isLastAssistant =
+                  !isUser && index === messages.length - 1 && message.content.trim() === ''
+                const showTypingCursor = !isUser && isResponding && index === messages.length - 1
+                return (
+                  <div
+                    key={message.id}
+                    className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
+                  >
+                    {!isUser ? (
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500">
+                        <Bot className="h-5 w-5" />
+                      </div>
+                    ) : null}
+                    <div
+                      className={`max-w-[76%] rounded-2xl border px-4 py-3 text-sm leading-6 shadow-sm ${
+                        isUser
+                          ? 'border-zinc-200 bg-zinc-100 text-zinc-800'
+                          : 'border-zinc-200 bg-white text-zinc-800'
+                      }`}
+                    >
+                      {isLastAssistant && isResponding ? (
+                        <div className="flex items-center gap-2 text-zinc-400">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>正在生成回复</span>
+                        </div>
+                      ) : (
+                        <div className="min-w-0">
+                          <MarkdownView content={message.content || ''} />
+                          {showTypingCursor ? (
+                            <span className="ml-1 inline-block animate-pulse text-indigo-400">
+                              |
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                    {isUser ? (
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500">
+                        <UserRound className="h-5 w-5" />
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </Card>
       <Card className="p-3">
-        <div className="flex flex-col gap-3">
+        <div className="flex items-end gap-3">
           <Textarea
             value={input}
+            className="min-h-[72px] flex-1 resize-none border-0 bg-zinc-50 focus-visible:ring-indigo-50"
             onChange={(event) => setInput(event.target.value)}
-            placeholder="输入你的问题，回车发送，Shift + 回车换行"
+            placeholder="输入你的问题，Enter 发送，Shift + Enter 换行"
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
@@ -167,9 +237,10 @@ export function ChatPage() {
               }
             }}
           />
-          <div className="flex justify-end">
-            <Button onClick={submit}>发送</Button>
-          </div>
+          <Button className="h-10 shrink-0 gap-2" onClick={submit} disabled={isResponding}>
+            <Send className="h-4 w-4" />
+            发送
+          </Button>
         </div>
       </Card>
     </div>
