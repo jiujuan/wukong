@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -159,6 +160,112 @@ func (r *ChatRepository) CreateMessage(ctx context.Context, item *model.ChatMess
 	).Scan(&item.ID, &item.Seq, &item.CreatedAt)
 }
 
+func (r *ChatRepository) ListRecentMessages(ctx context.Context, userID, sessionID string, limit int) ([]*model.ChatMessage, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("chat repository not ready")
+	}
+	if limit < 1 {
+		limit = 12
+	}
+	query := `
+		SELECT m.id, m.msg_id, m.session_id, m.user_id, m.role, m.content, m.content_type, m.task_id, m.thought, m.tool_call, m.tool_result, m.seq, m.created_at
+		FROM chat_message m
+		INNER JOIN chat_session s ON s.session_id = m.session_id
+		WHERE s.user_id = $1 AND m.session_id = $2
+		ORDER BY m.seq DESC, m.created_at DESC
+		LIMIT $3
+	`
+	rows, err := r.db.Query(ctx, query, userID, sessionID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	latest := make([]*model.ChatMessage, 0, limit)
+	for rows.Next() {
+		item := &model.ChatMessage{}
+		var taskID, thought pgtype.Text
+		var toolCall, toolResult []byte
+		if err := rows.Scan(
+			&item.ID, &item.MsgID, &item.SessionID, &item.UserID, &item.Role, &item.Content, &item.ContentType,
+			&taskID, &thought, &toolCall, &toolResult, &item.Seq, &item.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if taskID.Valid {
+			item.TaskID = taskID.String
+		}
+		if thought.Valid {
+			item.Thought = thought.String
+		}
+		item.ToolCall = strings.TrimSpace(string(toolCall))
+		item.ToolResult = strings.TrimSpace(string(toolResult))
+		latest = append(latest, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	reverseMessages(latest)
+	return latest, nil
+}
+
+func (r *ChatRepository) GetMemory(ctx context.Context, userID, sessionID string) (*model.ChatMemory, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("chat repository not ready")
+	}
+	query := `
+		SELECT id, session_id, user_id, recent_messages, summary, user_profile, preference, created_at, updated_at
+		FROM chat_memory
+		WHERE user_id = $1 AND session_id = $2
+		LIMIT 1
+	`
+	item := &model.ChatMemory{}
+	var summary pgtype.Text
+	var recentMessages, userProfile, preference []byte
+	if err := r.db.Pool().QueryRow(ctx, query, userID, sessionID).Scan(
+		&item.ID, &item.SessionID, &item.UserID, &recentMessages, &summary, &userProfile, &preference, &item.CreatedAt, &item.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	item.RecentMessages = append(json.RawMessage(nil), recentMessages...)
+	if summary.Valid {
+		item.Summary = summary.String
+	}
+	item.UserProfile = append(json.RawMessage(nil), userProfile...)
+	item.Preference = append(json.RawMessage(nil), preference...)
+	return item, nil
+}
+
+func (r *ChatRepository) UpsertMemory(ctx context.Context, item *model.ChatMemory) error {
+	if r == nil || r.db == nil || item == nil {
+		return fmt.Errorf("chat repository not ready")
+	}
+	query := `
+		INSERT INTO chat_memory (
+			session_id, user_id, recent_messages, summary, user_profile, preference, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+		ON CONFLICT (session_id) DO UPDATE SET
+			user_id = EXCLUDED.user_id,
+			recent_messages = EXCLUDED.recent_messages,
+			summary = EXCLUDED.summary,
+			user_profile = EXCLUDED.user_profile,
+			preference = EXCLUDED.preference,
+			updated_at = NOW()
+	`
+	_, err := r.db.Exec(
+		ctx,
+		query,
+		item.SessionID,
+		item.UserID,
+		nullableJSONRaw(item.RecentMessages),
+		nullableString(item.Summary),
+		nullableJSONRaw(item.UserProfile),
+		nullableJSONRaw(item.Preference),
+	)
+	return err
+}
+
 func (r *ChatRepository) ListMessages(ctx context.Context, userID, sessionID string, page, size int) ([]*model.ChatMessage, int64, error) {
 	if r == nil || r.db == nil {
 		return nil, 0, fmt.Errorf("chat repository not ready")
@@ -272,4 +379,18 @@ func nullableJSON(s string) any {
 		return nil
 	}
 	return trimmed
+}
+
+func nullableJSONRaw(raw json.RawMessage) any {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return nil
+	}
+	return trimmed
+}
+
+func reverseMessages(list []*model.ChatMessage) {
+	for i, j := 0, len(list)-1; i < j; i, j = i+1, j-1 {
+		list[i], list[j] = list[j], list[i]
+	}
 }

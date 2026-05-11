@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // User 用户模型
 type User struct {
@@ -42,6 +45,19 @@ type ChatMessage struct {
 	ToolResult  string    `json:"tool_result,omitempty"`
 	Seq         int       `json:"seq"`
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ChatMemory 会话级上下文记忆
+type ChatMemory struct {
+	ID             int64           `json:"id"`
+	SessionID      string          `json:"session_id"`
+	UserID         string          `json:"user_id"`
+	RecentMessages json.RawMessage `json:"recent_messages,omitempty"`
+	Summary        string          `json:"summary,omitempty"`
+	UserProfile    json.RawMessage `json:"user_profile,omitempty"`
+	Preference     json.RawMessage `json:"preference,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 // TaskInfo 任务模型
