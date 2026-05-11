@@ -164,6 +164,22 @@ curl http://localhost:8080/api/v1/task/list \
   -H "Authorization: Bearer <token>"
 ```
 
+### 5. 安装本地 Git Hooks
+
+前端代码提交前会自动执行 `wukong-frontend` 的 lint。首次拉取仓库后执行一次：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-git-hooks.ps1
+```
+
+macOS / Linux:
+
+```bash
+sh scripts/install-git-hooks.sh
+```
+
+安装后，只要暂存区里包含 `wukong-frontend/` 下的改动，`git commit` 会自动运行 `npm run lint`。
+
 
 
 ## 任务状态流转

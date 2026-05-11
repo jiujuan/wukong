@@ -9,6 +9,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect frontend changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'wukong-frontend/**'
+              - '.github/workflows/ci.yml'
+              - '.githooks/**'
+              - 'scripts/install-git-hooks.*'
+
   backend-test:
     name: backend test
     runs-on: ubuntu-latest
@@ -33,6 +53,8 @@ jobs:
 
   frontend-check:
     name: frontend check
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
