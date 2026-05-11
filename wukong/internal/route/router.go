@@ -67,6 +67,7 @@ func (r *Router) InitRouter() *gin.Engine {
 	// 全局中间件
 	r.engine.Use(middleware.Cors())
 	r.engine.Use(middleware.RequestID())
+	r.engine.Use(middleware.RequestLogger())
 	r.engine.Use(middleware.Recovery())
 
 	// API v1 分组
