@@ -7,18 +7,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jiujuan/wukong/internal/middleware"
-	"github.com/jiujuan/wukong/internal/service"
 	"github.com/jiujuan/wukong/pkg/errors"
 	"github.com/jiujuan/wukong/pkg/response"
 )
 
 // ChatHandler 对话处理器
 type ChatHandler struct {
-	chatService *service.ChatService
+	chatService ChatService
 }
 
 // NewChatHandler 新建对话处理器
-func NewChatHandler(chatService *service.ChatService) *ChatHandler {
+func NewChatHandler(chatService ChatService) *ChatHandler {
 	return &ChatHandler{chatService: chatService}
 }
 

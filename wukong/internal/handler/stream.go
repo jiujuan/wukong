@@ -9,15 +9,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jiujuan/wukong/internal/service"
 	wsconn "github.com/jiujuan/wukong/pkg/websocket"
 )
 
 type StreamHandler struct {
-	appService *service.StreamAppService
+	appService StreamAppService
 }
 
-func NewStreamHandler(appService *service.StreamAppService) *StreamHandler {
+func NewStreamHandler(appService StreamAppService) *StreamHandler {
 	return &StreamHandler{
 		appService: appService,
 	}
@@ -106,6 +105,8 @@ func (h *StreamHandler) TaskWebSocket(c *gin.Context) {
 	}
 }
 
+const streamTypeFinish = "FINISH"
+
 func (h *StreamHandler) serveSSE(c *gin.Context, isChat bool, id string, lastSeq int) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -113,15 +114,15 @@ func (h *StreamHandler) serveSSE(c *gin.Context, isChat bool, id string, lastSeq
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(http.StatusOK)
 
-	var backlog []*service.StreamMessage
-	var streamCh <-chan *service.StreamMessage
+	var backlog []*StreamMessage
+	var streamCh <-chan *StreamMessage
 	var cancel func()
 	if isChat {
-		var rows []*service.StreamMessage
+		var rows []*StreamMessage
 		rows, streamCh, cancel = h.appService.SubscribeChat(c.Request.Context(), id, lastSeq)
 		backlog = rows
 	} else {
-		var rows []*service.StreamMessage
+		var rows []*StreamMessage
 		rows, streamCh, cancel = h.appService.SubscribeTask(c.Request.Context(), id, lastSeq)
 		backlog = rows
 	}
@@ -151,14 +152,14 @@ func (h *StreamHandler) serveSSE(c *gin.Context, isChat bool, id string, lastSeq
 			if !writeSSE(c, item) {
 				return
 			}
-			if item.MsgType == service.StreamTypeFinish {
+			if item.MsgType == streamTypeFinish {
 				return
 			}
 		}
 	}
 }
 
-func writeSSE(c *gin.Context, item *service.StreamMessage) bool {
+func writeSSE(c *gin.Context, item *StreamMessage) bool {
 	if item == nil {
 		return true
 	}
@@ -213,7 +214,7 @@ func parseWSCommand(payload []byte) (action string, taskID string, content strin
 	return
 }
 
-func marshalWSPayload(item *service.StreamMessage) []byte {
+func marshalWSPayload(item *StreamMessage) []byte {
 	if item == nil {
 		return []byte("{}")
 	}
