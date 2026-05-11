@@ -79,3 +79,8 @@ export type SkillItem = {
   memoryType?: string
   windowSize?: number
 }
+
+export type ToolItem = {
+  name: string
+  description: string
+}

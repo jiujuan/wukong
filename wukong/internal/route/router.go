@@ -12,6 +12,7 @@ import (
 	"github.com/jiujuan/wukong/pkg/manager"
 	"github.com/jiujuan/wukong/pkg/memory"
 	"github.com/jiujuan/wukong/pkg/skills"
+	"github.com/jiujuan/wukong/pkg/tool"
 )
 
 // Router 路由管理
@@ -24,12 +25,13 @@ type Router struct {
 	chatHandler   *handler.ChatHandler
 	taskHandler   *handler.TaskHandler
 	skillHandler  *handler.SkillHandler
+	toolHandler   *handler.ToolHandler
 	memoryHandler *handler.MemoryHandler
 	streamHandler *handler.StreamHandler
 }
 
 // NewRouter 创建路由实例
-func NewRouter(engine *gin.Engine, jwtTool *jwt.JWT, llmProvider *llm.Provider, mgr *manager.Manager, skillRegistry *skills.Registry, memoryManager *memory.Manager, streamService *service.StreamService, db *database.DB) *Router {
+func NewRouter(engine *gin.Engine, jwtTool *jwt.JWT, llmProvider *llm.Provider, mgr *manager.Manager, skillRegistry *skills.Registry, toolManager *tool.Manager, memoryManager *memory.Manager, streamService *service.StreamService, db *database.DB) *Router {
 	r := &Router{
 		engine:      engine,
 		jwtTool:     jwtTool,
@@ -50,6 +52,8 @@ func NewRouter(engine *gin.Engine, jwtTool *jwt.JWT, llmProvider *llm.Provider, 
 	skillRepo := repository.NewSkillRepository(db)
 	skillService := service.NewSkillService(skillRepo, skillRegistry)
 	r.skillHandler = handler.NewSkillHandler(skillService)
+	toolService := service.NewToolService(toolManager)
+	r.toolHandler = handler.NewToolHandler(toolService)
 	memoryService := service.NewMemoryService(memoryManager)
 	r.memoryHandler = handler.NewMemoryHandler(memoryService)
 	streamAppService := service.NewStreamAppService(streamService, taskService)
@@ -113,6 +117,11 @@ func (r *Router) InitRouter() *gin.Engine {
 			skill := api.Group("/skill")
 			{
 				skill.GET("/list", r.skillHandler.ListSkills)
+			}
+
+			toolGroup := api.Group("/tool")
+			{
+				toolGroup.GET("/list", r.toolHandler.ListTools)
 			}
 
 			mem := api.Group("/memory")

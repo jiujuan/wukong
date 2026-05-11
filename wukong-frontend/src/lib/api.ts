@@ -5,6 +5,7 @@ import type {
   SkillItem,
   TaskDetail,
   TaskItem,
+  ToolItem,
   WorkingMemory,
 } from '@/types/domain'
 
@@ -323,6 +324,21 @@ export const api = {
         enabled: Boolean(pick(row, ['enabled'], true)),
         memoryType: pick<string | undefined>(row, ['memoryType', 'memory_type'], undefined),
         windowSize: pick<number | undefined>(row, ['windowSize', 'window_size'], undefined),
+      }
+    })
+  },
+  async listTools(): Promise<ToolItem[]> {
+    const raw = await request<unknown>('/api/v1/tool/list')
+    const list = Array.isArray(raw)
+      ? raw
+      : Array.isArray((raw as { list?: unknown[] })?.list)
+        ? ((raw as { list?: unknown[] }).list ?? [])
+        : []
+    return list.map((item, idx) => {
+      const row = item as Record<string, unknown>
+      return {
+        name: pick(row, ['name'], `tool-${idx}`),
+        description: pick(row, ['description'], ''),
       }
     })
   },

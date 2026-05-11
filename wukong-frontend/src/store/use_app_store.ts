@@ -7,6 +7,7 @@ import type {
   SkillItem,
   StreamEvent,
   TaskItem,
+  ToolItem,
   WorkingMemory,
 } from '@/types/domain'
 
@@ -20,6 +21,7 @@ type AppState = {
   workingMemory: WorkingMemory[]
   longMemory: LongMemory[]
   skills: SkillItem[]
+  tools: ToolItem[]
   memoryOpen: boolean
   setCurrentSession: (sessionId: string) => void
   setCurrentTask: (taskId: string) => void
@@ -43,6 +45,7 @@ type AppState = {
   loadTasks: () => Promise<void>
   loadMemory: (taskId: string, skillName?: string) => Promise<void>
   loadSkills: () => Promise<void>
+  loadTools: () => Promise<void>
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -55,6 +58,7 @@ export const useAppStore = create<AppState>((set) => ({
   workingMemory: [],
   longMemory: [],
   skills: [],
+  tools: [],
   memoryOpen: false,
   setCurrentSession: (sessionId) => set({ currentSessionId: sessionId }),
   setCurrentTask: (taskId) => set({ currentTaskId: taskId }),
@@ -189,6 +193,10 @@ export const useAppStore = create<AppState>((set) => ({
   async loadSkills() {
     const skills = await api.listSkills()
     set({ skills })
+  },
+  async loadTools() {
+    const tools = await api.listTools()
+    set({ tools })
   },
 }))
 

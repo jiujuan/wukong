@@ -28,6 +28,10 @@ type SkillService interface {
 	ListSkills(ctx context.Context) ([]*model.SkillMeta, error)
 }
 
+type ToolService interface {
+	ListTools(ctx context.Context) []map[string]string
+}
+
 type MemoryService interface {
 	ListWorking(ctx context.Context, userID string, taskID string, limit int) []*memory.WorkingMemory
 	ListLong(ctx context.Context, userID string, skillName string, keyword string, limit int) []*memory.LongTermMemory

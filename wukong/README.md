@@ -122,6 +122,12 @@ go mod tidy
 go run cmd/server/main.go
 ```
 
+开发时可使用热重载启动器：
+
+```bash
+go run cmd/dev/main.go
+```
+
 ### 4. 测试接口
 
 ```bash
@@ -157,4 +163,3 @@ PENDING → PLANNING → RUNNING → WAITING → COMPLETED
                        ↓
                   PENDING (重试)
 ```
-
