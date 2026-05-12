@@ -1,4 +1,4 @@
-package tool
+package tools
 
 import (
 	"fmt"
@@ -27,4 +27,15 @@ func readString(source map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func mapKeys(items map[string]any) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(items))
+	for key := range items {
+		keys = append(keys, key)
+	}
+	return keys
 }

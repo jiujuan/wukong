@@ -1,4 +1,4 @@
-package tool
+package tools
 
 import (
 	"context"
@@ -11,6 +11,10 @@ import (
 type MemoryReadTool struct {
 	store  MemoryStore
 	logger *pkglogger.Logger
+}
+
+func NewMemoryReadTool(store MemoryStore, logger *pkglogger.Logger) *MemoryReadTool {
+	return &MemoryReadTool{store: store, logger: logger}
 }
 
 func (t *MemoryReadTool) Name() string { return "memory_read" }
@@ -50,6 +54,10 @@ func (t *MemoryReadTool) Execute(ctx context.Context, params map[string]any) (ma
 type MemoryWriteTool struct {
 	store  MemoryStore
 	logger *pkglogger.Logger
+}
+
+func NewMemoryWriteTool(store MemoryStore, logger *pkglogger.Logger) *MemoryWriteTool {
+	return &MemoryWriteTool{store: store, logger: logger}
 }
 
 func (t *MemoryWriteTool) Name() string { return "memory_write" }

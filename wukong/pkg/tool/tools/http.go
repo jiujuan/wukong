@@ -1,4 +1,4 @@
-package tool
+package tools
 
 import (
 	"context"
@@ -15,6 +15,10 @@ import (
 type HTTPTool struct {
 	client *http.Client
 	logger *pkglogger.Logger
+}
+
+func NewHTTPTool(client *http.Client, logger *pkglogger.Logger) *HTTPTool {
+	return &HTTPTool{client: client, logger: logger}
 }
 
 func (t *HTTPTool) Name() string { return "http_request" }

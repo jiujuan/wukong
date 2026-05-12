@@ -12,6 +12,7 @@ import (
 	"github.com/jiujuan/wukong/pkg/llm"
 	pkglogger "github.com/jiujuan/wukong/pkg/logger"
 	"github.com/jiujuan/wukong/pkg/skills"
+	tooltools "github.com/jiujuan/wukong/pkg/tool/tools"
 )
 
 type Manager struct {
@@ -140,14 +141,14 @@ func (m *Manager) ExecuteForSkill(ctx context.Context, skillName, toolName strin
 }
 
 func (m *Manager) registerBuiltins() {
-	m.Register(&LLMTool{provider: m.llmProvider, logger: m.logger})
-	m.Register(&WebSearchTool{client: m.httpClient, logger: m.logger})
-	m.Register(&FileReadTool{baseDir: m.baseDir, logger: m.logger})
-	m.Register(&FileWriteTool{baseDir: m.fileWriteDir, logger: m.logger, now: time.Now})
-	m.Register(&HTTPTool{client: m.httpClient, logger: m.logger})
-	m.Register(&CodeExecTool{timeout: m.execTimeout, logger: m.logger})
-	m.Register(&MemoryReadTool{store: m.memoryStore, logger: m.logger})
-	m.Register(&MemoryWriteTool{store: m.memoryStore, logger: m.logger})
+	m.Register(tooltools.NewLLMTool(m.llmProvider, m.logger))
+	m.Register(tooltools.NewWebSearchTool(m.httpClient, m.logger))
+	m.Register(tooltools.NewFileReadTool(m.baseDir, m.logger))
+	m.Register(tooltools.NewFileWriteTool(m.fileWriteDir, m.logger))
+	m.Register(tooltools.NewHTTPTool(m.httpClient, m.logger))
+	m.Register(tooltools.NewCodeExecTool(m.execTimeout, m.logger))
+	m.Register(tooltools.NewMemoryReadTool(m.memoryStore, m.logger))
+	m.Register(tooltools.NewMemoryWriteTool(m.memoryStore, m.logger))
 	m.logger.Info("[ToolManager] builtin tools ready", "count", len(m.tools))
 }
 

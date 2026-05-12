@@ -1,4 +1,4 @@
-package tool
+package tools
 
 import (
 	"context"
@@ -12,6 +12,10 @@ import (
 type LLMTool struct {
 	provider *llm.Provider
 	logger   *pkglogger.Logger
+}
+
+func NewLLMTool(provider *llm.Provider, logger *pkglogger.Logger) *LLMTool {
+	return &LLMTool{provider: provider, logger: logger}
 }
 
 func (t *LLMTool) Name() string { return "llm_chat" }

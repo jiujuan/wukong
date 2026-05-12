@@ -1,4 +1,4 @@
-package tool
+package tools
 
 import (
 	"context"
@@ -16,6 +16,10 @@ import (
 type WebSearchTool struct {
 	client *http.Client
 	logger *pkglogger.Logger
+}
+
+func NewWebSearchTool(client *http.Client, logger *pkglogger.Logger) *WebSearchTool {
+	return &WebSearchTool{client: client, logger: logger}
 }
 
 func (t *WebSearchTool) Name() string { return "web_search" }

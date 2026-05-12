@@ -1,4 +1,4 @@
-package tool
+package tools
 
 import (
 	"context"
@@ -15,6 +15,10 @@ type FileWriteTool struct {
 	baseDir string
 	logger  *pkglogger.Logger
 	now     func() time.Time
+}
+
+func NewFileWriteTool(baseDir string, logger *pkglogger.Logger) *FileWriteTool {
+	return &FileWriteTool{baseDir: baseDir, logger: logger, now: time.Now}
 }
 
 func (t *FileWriteTool) Name() string { return "file_write" }

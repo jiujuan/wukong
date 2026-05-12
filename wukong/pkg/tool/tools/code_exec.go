@@ -1,4 +1,4 @@
-package tool
+package tools
 
 import (
 	"context"
@@ -14,6 +14,10 @@ import (
 type CodeExecTool struct {
 	timeout time.Duration
 	logger  *pkglogger.Logger
+}
+
+func NewCodeExecTool(timeout time.Duration, logger *pkglogger.Logger) *CodeExecTool {
+	return &CodeExecTool{timeout: timeout, logger: logger}
 }
 
 func (t *CodeExecTool) Name() string { return "code_exec" }

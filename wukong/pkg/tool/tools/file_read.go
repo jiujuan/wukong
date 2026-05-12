@@ -1,4 +1,4 @@
-package tool
+package tools
 
 import (
 	"context"
@@ -12,6 +12,10 @@ import (
 type FileReadTool struct {
 	baseDir string
 	logger  *pkglogger.Logger
+}
+
+func NewFileReadTool(baseDir string, logger *pkglogger.Logger) *FileReadTool {
+	return &FileReadTool{baseDir: baseDir, logger: logger}
 }
 
 func (t *FileReadTool) Name() string { return "file_read" }
