@@ -46,4 +46,5 @@ skills/
 
 .codex
 
-storage/output_data/*
+
+wukong/storage/output_data/*

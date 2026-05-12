@@ -40,6 +40,12 @@ export function TasksPage() {
   const navigate = useNavigate()
   const { taskId: routeTaskId } = useParams()
   const isDetailPage = Boolean(routeTaskId)
+  const listPageSize = 10
+  const [listPage, setListPage] = useState(1)
+  const [listTotal, setListTotal] = useState(0)
+  const [listPages, setListPages] = useState(1)
+  const [listLoading, setListLoading] = useState(false)
+  const [pagedTasks, setPagedTasks] = useState<TaskRowData[]>([])
   const [activeFilter, setActiveFilter] = useState<StreamType | 'ALL'>('ALL')
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
@@ -79,8 +85,37 @@ export function TasksPage() {
   )
 
   useEffect(() => {
-    loadTasks().catch((error: Error) => toast.error(error.message))
-  }, [loadTasks])
+    if (isDetailPage) {
+      loadTasks().catch((error: Error) => toast.error(error.message))
+      return
+    }
+    let active = true
+    setListLoading(true)
+    api
+      .listTasksPage({ page: listPage, size: listPageSize })
+      .then((resp) => {
+        if (!active) {
+          return
+        }
+        setPagedTasks(resp.list)
+        setListTotal(resp.total)
+        setListPages(Math.max(1, resp.pages))
+      })
+      .catch((error: Error) => {
+        if (!active) {
+          return
+        }
+        toast.error(error.message)
+      })
+      .finally(() => {
+        if (active) {
+          setListLoading(false)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [isDetailPage, loadTasks, listPage])
 
   useEffect(() => {
     loadSkills().catch((error: Error) => toast.error(error.message))
@@ -284,7 +319,7 @@ export function TasksPage() {
           }
         />
         <Card className="min-h-0 flex-1 overflow-hidden">
-          <SectionTitle icon={ListTodo} title="Task List" description={`${tasks.length} tasks`} />
+          <SectionTitle icon={ListTodo} title="Task List" description={`${listTotal} tasks`} />
           <div className="min-h-0 overflow-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
@@ -296,10 +331,12 @@ export function TasksPage() {
                 </tr>
               </thead>
               <tbody>
-                {tasks.length === 0 ? (
+                {listLoading ? (
+                  <EmptyTable colSpan={4}>Loading tasks...</EmptyTable>
+                ) : pagedTasks.length === 0 ? (
                   <EmptyTable colSpan={4}>No tasks yet. Submit one to get started.</EmptyTable>
                 ) : (
-                  tasks.map((task) => (
+                  pagedTasks.map((task) => (
                     <tr key={task.taskId} className="border-b border-zinc-100 hover:bg-indigo-50/20">
                       <td className="px-5 py-4">
                         <button
@@ -330,6 +367,30 @@ export function TasksPage() {
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-zinc-100 px-5 py-3 text-sm text-zinc-500">
+            <div>{renderPageSummary(listPage, listPageSize, listTotal)}</div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={listPage <= 1 || listLoading}
+                onClick={() => setListPage((prev) => Math.max(1, prev - 1))}
+              >
+                Prev
+              </Button>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs text-zinc-600">
+                {listPage} / {listPages}
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={listPage >= listPages || listLoading}
+                onClick={() => setListPage((prev) => Math.min(listPages, prev + 1))}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         </Card>
         <TaskSheet
@@ -491,6 +552,23 @@ export function TasksPage() {
       </div>
     </div>
   )
+}
+
+type TaskRowData = {
+  taskId: string
+  title: string
+  status: string
+  skillName?: string
+  createdAt?: string
+}
+
+function renderPageSummary(page: number, size: number, total: number) {
+  if (total <= 0) {
+    return 'Showing 0 of 0'
+  }
+  const start = (page - 1) * size + 1
+  const end = Math.min(page * size, total)
+  return `Showing ${start}-${end} of ${total}`
 }
 
 function PageHeader({

@@ -145,6 +145,33 @@ describe('api memory requests', () => {
     )
   })
 
+  it('requests paged task list with page and size query parameters', async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          list: [],
+          total: 0,
+          page: 1,
+          size: 10,
+          pages: 0,
+        },
+      }),
+    } as Response)
+
+    await api.listTasksPage({ page: 1, size: 10 })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v1/task/list?page=1&size=10',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
+        }),
+      }),
+    )
+  })
+
   it('parses task detail response without changing the API contract', async () => {
     const fetchMock = vi.mocked(fetch)
     fetchMock.mockResolvedValue({
