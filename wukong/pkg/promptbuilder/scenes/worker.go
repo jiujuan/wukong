@@ -1,6 +1,9 @@
 package scenes
 
-import "github.com/jiujuan/wukong/pkg/promptbuilder"
+import (
+	wkcontext "github.com/jiujuan/wukong/pkg/context"
+	"github.com/jiujuan/wukong/pkg/promptbuilder"
+)
 
 const WorkerSceneName = "worker"
 
@@ -8,6 +11,10 @@ func NewWorkerPreset(templateKey string, setup func(*promptbuilder.Builder) erro
 	return Preset{
 		SceneName:   WorkerSceneName,
 		TemplateKey: templateKey,
-		Setup:       setup,
+		SceneConfig: wkcontext.SceneConfig{
+			Name:    WorkerSceneName,
+			Sources: []string{"task_state", "skill_spec"},
+		},
+		Setup: setup,
 	}
 }

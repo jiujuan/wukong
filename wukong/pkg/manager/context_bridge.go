@@ -8,6 +8,7 @@ import (
 	"github.com/jiujuan/wukong/pkg/llm"
 	"github.com/jiujuan/wukong/pkg/prompt"
 	"github.com/jiujuan/wukong/pkg/promptbuilder"
+	"github.com/jiujuan/wukong/pkg/promptbuilder/scenes"
 )
 
 const plannerSceneName = "planner"
@@ -26,10 +27,18 @@ func newPlannerContextEngine(loader ctxengine.SkillSpecLoader) *ctxengine.Engine
 type plannerSceneAssembler struct{}
 
 func newPlannerPromptBuilder(contextEngine *ctxengine.Engine, promptEngine *prompt.Engine) *promptbuilder.Builder {
-	builder := promptbuilder.New(contextEngine, promptEngine)
-	builder.BindSceneTemplate(plannerSceneName, prompt.TemplatePlannerTaskDefault)
-	builder.RegisterAssembler(plannerSceneName, plannerSceneAssembler{})
-	return builder
+	factory := promptbuilder.NewFactory(
+		promptbuilder.WithContextEngineFactory(func() *ctxengine.Engine { return contextEngine }),
+		promptbuilder.WithPromptEngineFactory(func() *prompt.Engine { return promptEngine }),
+	)
+	factory.RegisterPreset(scenes.NewPlannerPreset(
+		prompt.TemplatePlannerTaskDefault,
+		func(b *promptbuilder.Builder) error {
+			b.RegisterAssembler(plannerSceneName, plannerSceneAssembler{})
+			return nil
+		},
+	))
+	return factory.MustForScene(plannerSceneName)
 }
 
 func (a plannerSceneAssembler) BuildPromptInput(req promptbuilder.BuildRequest, bundle *ctxengine.ContextBundle) prompt.RenderInput {

@@ -8,15 +8,29 @@ import (
 	"github.com/jiujuan/wukong/pkg/llm"
 	"github.com/jiujuan/wukong/pkg/prompt"
 	"github.com/jiujuan/wukong/pkg/promptbuilder"
+	"github.com/jiujuan/wukong/pkg/promptbuilder/scenes"
 )
 
 type chatSceneAssembler struct{}
 
 func newChatPromptBuilder(contextEngine *ctxengine.Engine, promptEngine *prompt.Engine) *promptbuilder.Builder {
-	builder := promptbuilder.New(contextEngine, promptEngine)
-	builder.BindSceneTemplate(chatSceneName, prompt.TemplateChatSessionDefault)
-	builder.RegisterAssembler(chatSceneName, chatSceneAssembler{})
-	return builder
+	factory := promptbuilder.NewFactory(
+		promptbuilder.WithContextEngineFactory(func() *ctxengine.Engine { return contextEngine }),
+		promptbuilder.WithPromptEngineFactory(func() *prompt.Engine { return promptEngine }),
+	)
+	factory.RegisterPreset(scenes.Preset{
+		SceneName: chatSceneName,
+		SceneConfig: ctxengine.SceneConfig{
+			Name:    chatSceneName,
+			Sources: []string{chatMemorySourceName, chatHistorySourceName},
+		},
+		TemplateKey: prompt.TemplateChatSessionDefault,
+		Setup: func(b *promptbuilder.Builder) error {
+			b.RegisterAssembler(chatSceneName, chatSceneAssembler{})
+			return nil
+		},
+	})
+	return factory.MustForScene(chatSceneName)
 }
 
 func (a chatSceneAssembler) BuildPromptInput(req promptbuilder.BuildRequest, bundle *ctxengine.ContextBundle) prompt.RenderInput {

@@ -3,6 +3,7 @@ package promptbuilder
 import (
 	stdctx "context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	wkcontext "github.com/jiujuan/wukong/pkg/context"
@@ -55,6 +56,12 @@ func (b *Builder) RegisterContextPolicy(policy wkcontext.Policy) error {
 func (b *Builder) RegisterScene(scene wkcontext.SceneConfig) error {
 	if b == nil || b.contextEngine == nil {
 		return ErrContextEngineNil
+	}
+	if existing, ok := b.contextEngine.GetScene(scene.Name); ok {
+		if reflect.DeepEqual(existing, scene) {
+			return nil
+		}
+		return fmt.Errorf("scene %q already registered", strings.TrimSpace(scene.Name))
 	}
 	return b.contextEngine.RegisterScene(scene)
 }

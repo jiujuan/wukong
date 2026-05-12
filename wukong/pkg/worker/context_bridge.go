@@ -9,6 +9,7 @@ import (
 	"github.com/jiujuan/wukong/pkg/llm"
 	"github.com/jiujuan/wukong/pkg/prompt"
 	"github.com/jiujuan/wukong/pkg/promptbuilder"
+	"github.com/jiujuan/wukong/pkg/promptbuilder/scenes"
 	"github.com/jiujuan/wukong/pkg/skills"
 )
 
@@ -62,10 +63,18 @@ func newWorkerContextEngine(registry *skills.Registry) *ctxengine.Engine {
 type workerSceneAssembler struct{}
 
 func newWorkerPromptBuilder(contextEngine *ctxengine.Engine, promptEngine *prompt.Engine) *promptbuilder.Builder {
-	builder := promptbuilder.New(contextEngine, promptEngine)
-	builder.BindSceneTemplate(workerSceneName, prompt.TemplateWorkerActionDefault)
-	builder.RegisterAssembler(workerSceneName, workerSceneAssembler{})
-	return builder
+	factory := promptbuilder.NewFactory(
+		promptbuilder.WithContextEngineFactory(func() *ctxengine.Engine { return contextEngine }),
+		promptbuilder.WithPromptEngineFactory(func() *prompt.Engine { return promptEngine }),
+	)
+	factory.RegisterPreset(scenes.NewWorkerPreset(
+		prompt.TemplateWorkerActionDefault,
+		func(b *promptbuilder.Builder) error {
+			b.RegisterAssembler(workerSceneName, workerSceneAssembler{})
+			return nil
+		},
+	))
+	return factory.MustForScene(workerSceneName)
 }
 
 func (a workerSceneAssembler) BuildPromptInput(req promptbuilder.BuildRequest, bundle *ctxengine.ContextBundle) prompt.RenderInput {
