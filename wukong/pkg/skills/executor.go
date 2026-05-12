@@ -4,11 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+
+	"github.com/jiujuan/wukong/pkg/sandbox"
 )
+
+var (
+	skillSandboxOnce sync.Once
+	skillSandboxInst *sandbox.Sandbox
+)
+
+func skillSandbox() *sandbox.Sandbox {
+	skillSandboxOnce.Do(func() {
+		skillSandboxInst = sandbox.New(
+			sandbox.WithAllowedEnvKeys("SKILL_NAME", "SKILL_PARAMS"),
+		)
+	})
+	return skillSandboxInst
+}
 
 func (r *Registry) Execute(ctx context.Context, skillName string) (string, error) {
 	result, err := r.ExecuteWithParams(ctx, skillName, nil)
@@ -29,6 +44,7 @@ func (r *Registry) ExecuteWithParams(ctx context.Context, skillName string, para
 	if item.Execute == "" {
 		return nil, fmt.Errorf("skill execute entry empty: %s", skillName)
 	}
+
 	scriptPath := item.Execute
 	if item.SourcePath != "" {
 		scriptPath = filepath.Join(filepath.Dir(item.SourcePath), item.Execute)
@@ -39,6 +55,7 @@ func (r *Registry) ExecuteWithParams(ctx context.Context, skillName string, para
 	}
 	runCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 	defer cancel()
+
 	envMap := map[string]string{
 		"SKILL_NAME": item.SkillName,
 	}
@@ -49,56 +66,64 @@ func (r *Registry) ExecuteWithParams(ctx context.Context, skillName string, para
 		}
 		envMap["SKILL_PARAMS"] = string(raw)
 	}
-	cmd, err := commandForScript(runCtx, absPath, envMap)
-	if err != nil {
-		return nil, err
+	runtimeName := runtimeFromScript(absPath)
+	if strings.TrimSpace(runtimeName) == "" {
+		return nil, fmt.Errorf("unsupported execute script extension: %s", filepath.Ext(absPath))
 	}
-	cmd.Dir = filepath.Dir(absPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return map[string]any{
-			"skill_name": item.SkillName,
-			"output":     string(output),
-		}, err
-	}
-	return map[string]any{
+
+	result, err := skillSandbox().Execute(runCtx, sandbox.Request{
+		Runtime:    runtimeName,
+		ScriptPath: absPath,
+		WorkDir:    filepath.Dir(absPath),
+		Env:        envMap,
+		Timeout:    r.execTimeout,
+	})
+	output := combineSkillOutput(result.Stdout, result.Stderr)
+	payload := map[string]any{
 		"skill_name": item.SkillName,
-		"output":     string(output),
-	}, nil
-}
-func commandForScript(ctx context.Context, path string, envMap map[string]string) (*exec.Cmd, error) {
-	var cmd *exec.Cmd
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".py":
-		cmd = exec.CommandContext(ctx, "python", path)
-	case ".sh":
-		cmd = exec.CommandContext(ctx, "bash", path)
-	case ".ps1":
-		shell, err := findPowerShell()
-		if err != nil {
-			return nil, err
-		}
-		cmd = exec.CommandContext(ctx, shell, "-ExecutionPolicy", "Bypass", "-File", path)
-	default:
-		return nil, fmt.Errorf("unsupported execute script extension: %s", ext)
+		"output":     output,
+		"stdout":     result.Stdout,
+		"stderr":     result.Stderr,
+		"exit_code":  result.ExitCode,
+		"truncated":  result.Truncated,
 	}
-	if len(envMap) > 0 {
-		env := append([]string(nil), os.Environ()...)
-		for k, v := range envMap {
-			env = append(env, k+"="+v)
+	if err != nil {
+		payload["error"] = err.Error()
+		if strings.TrimSpace(output) == "" && result.Error != "" {
+			payload["output"] = result.Error
 		}
-		cmd.Env = env
+		return payload, err
 	}
-	return cmd, nil
+	return payload, nil
 }
 
-func findPowerShell() (string, error) {
-	candidates := []string{"pwsh", "powershell"}
-	for _, name := range candidates {
-		if _, err := exec.LookPath(name); err == nil {
-			return name, nil
-		}
+func runtimeFromScript(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".py":
+		return "python"
+	case ".sh":
+		return "bash"
+	case ".ps1":
+		return "powershell"
+	case ".js":
+		return "javascript"
+	case ".ts":
+		return "typescript"
+	case ".go":
+		return "go"
+	case ".java":
+		return "java"
+	default:
+		return ""
 	}
-	return "", fmt.Errorf("powershell runtime not found in PATH: tried %s", strings.Join(candidates, ", "))
+}
+
+func combineSkillOutput(stdout, stderr string) string {
+	if strings.TrimSpace(stdout) == "" {
+		return stderr
+	}
+	if strings.TrimSpace(stderr) == "" {
+		return stdout
+	}
+	return stdout + "\n" + stderr
 }
