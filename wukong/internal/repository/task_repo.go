@@ -277,6 +277,14 @@ func (r *TaskRepository) CreateSubTask(ctx context.Context, subtask *manager.Sub
 	query := `
 		INSERT INTO task_sub (sub_task_id, task_id, depends_on, action, params, status, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (sub_task_id) DO UPDATE SET
+			task_id = EXCLUDED.task_id,
+			depends_on = EXCLUDED.depends_on,
+			action = EXCLUDED.action,
+			params = EXCLUDED.params,
+			status = EXCLUDED.status,
+			created_at = LEAST(task_sub.created_at, EXCLUDED.created_at),
+			updated_at = EXCLUDED.updated_at
 	`
 	_, err = r.db.Exec(ctx, query,
 		subtask.SubTaskID, subtask.TaskID, dependsOnJSON, subtask.Action,

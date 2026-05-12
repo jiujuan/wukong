@@ -12,6 +12,7 @@ import (
 	"github.com/jiujuan/wukong/pkg/errors"
 	"github.com/jiujuan/wukong/pkg/llm"
 	"github.com/jiujuan/wukong/pkg/prompt"
+	"github.com/jiujuan/wukong/pkg/promptbuilder"
 	"github.com/jiujuan/wukong/pkg/uuid"
 )
 
@@ -41,15 +42,19 @@ type ChatService struct {
 	streamService *StreamService
 	promptEngine  *prompt.Engine
 	contextEngine *ctxengine.Engine
+	promptBuilder *promptbuilder.Builder
 }
 
 func NewChatService(repo chatRepository, llmProvider *llm.Provider, streamService *StreamService) *ChatService {
+	promptEngine := prompt.NewDefaultEngine()
+	contextEngine := newChatContextEngine(repo)
 	return &ChatService{
 		repo:          repo,
 		llmProvider:   llmProvider,
 		streamService: streamService,
-		promptEngine:  prompt.NewDefaultEngine(),
-		contextEngine: newChatContextEngine(repo),
+		promptEngine:  promptEngine,
+		contextEngine: contextEngine,
+		promptBuilder: newChatPromptBuilder(contextEngine, promptEngine),
 	}
 }
 
@@ -127,18 +132,19 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, sessionID, conten
 		if streamer, ok := s.llmProvider.(chatStreamer); ok {
 			streamedReply, chatErr := s.streamChatReply(ctx, sessionID, messages, streamer)
 			if chatErr != nil {
-				return nil, chatErr
-			}
-			if strings.TrimSpace(streamedReply) != "" {
+				if strings.TrimSpace(streamedReply) != "" {
+					reply = streamedReply
+					streamed = true
+				} else if resp, fallbackErr := s.llmProvider.Chat(ctx, messages); fallbackErr == nil && resp != nil && len(resp.Choices) > 0 {
+					reply = resp.Choices[0].Message.Content
+				}
+			} else if strings.TrimSpace(streamedReply) != "" {
 				reply = streamedReply
 				streamed = true
 			}
 		} else {
 			resp, chatErr := s.llmProvider.Chat(ctx, messages)
-			if chatErr != nil {
-				return nil, chatErr
-			}
-			if len(resp.Choices) > 0 {
+			if chatErr == nil && resp != nil && len(resp.Choices) > 0 {
 				reply = resp.Choices[0].Message.Content
 			}
 		}
@@ -201,43 +207,26 @@ const (
 
 func (s *ChatService) buildLLMMessages(ctx context.Context, userID, sessionID, currentMsgID, content string) []llm.Message {
 	s.ensureEngines()
-
-	bundle, err := s.contextEngine.Build(ctx, ctxengine.BuildRequest{
-		Scene:     chatSceneName,
-		UserID:    userID,
-		SessionID: sessionID,
-		Query:     content,
-		Variables: map[string]any{
-			"current_msg_id": currentMsgID,
-			"history_limit":  chatRecentHistoryLimit + 1,
+	result, err := s.promptBuilder.BuildMessages(ctx, promptbuilder.BuildRequest{
+		Scene: chatSceneName,
+		Context: ctxengine.BuildRequest{
+			Scene:     chatSceneName,
+			UserID:    userID,
+			SessionID: sessionID,
+			Query:     content,
+			Variables: map[string]any{
+				"current_msg_id": currentMsgID,
+				"history_limit":  chatRecentHistoryLimit + 1,
+			},
 		},
-	})
-	if err != nil {
-		return []llm.Message{{Role: "user", Content: strings.TrimSpace(content)}}
-	}
-
-	baseMessages, err := s.promptEngine.Render(prompt.TemplateChatSessionDefault, prompt.RenderInput{
 		Variables: map[string]any{
-			"memory_text":          memoryTextFromBundle(bundle),
 			"current_user_message": strings.TrimSpace(content),
 		},
 	})
-	if err != nil || len(baseMessages) == 0 {
+	if err != nil || result == nil || len(result.Messages) == 0 {
 		return []llm.Message{{Role: "user", Content: strings.TrimSpace(content)}}
 	}
-
-	messages := make([]llm.Message, 0, len(baseMessages)+len(bundle.Blocks))
-	for _, item := range filterPromptMessages(baseMessages[:len(baseMessages)-1]) {
-		messages = append(messages, item)
-	}
-	for _, item := range historyMessagesFromBundle(bundle) {
-		messages = append(messages, llm.Message{Role: item.Role, Content: item.Content})
-	}
-	last := baseMessages[len(baseMessages)-1]
-	if strings.TrimSpace(last.Role) != "" && strings.TrimSpace(last.Content) != "" {
-		messages = append(messages, last)
-	}
-	return messages
+	return result.Messages
 }
 
 func (s *ChatService) ensureEngines() {
@@ -249,6 +238,9 @@ func (s *ChatService) ensureEngines() {
 	}
 	if s.contextEngine == nil {
 		s.contextEngine = newChatContextEngine(s.repo)
+	}
+	if s.promptBuilder == nil {
+		s.promptBuilder = newChatPromptBuilder(s.contextEngine, s.promptEngine)
 	}
 }
 

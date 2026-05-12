@@ -36,7 +36,9 @@ func WithEnv(env string) Option {
 
 // Config 配置管理
 type Config struct {
-	k *koanf.Koanf
+	k          *koanf.Koanf
+	configPath string
+	configDir  string
 }
 
 // New 新建配置实例
@@ -63,9 +65,12 @@ func New(opts ...Option) (*Config, error) {
 		}
 		configPath = fmt.Sprintf("configs/%s.yaml", envName)
 	}
+	configDir := filepath.Dir(configPath)
 
 	// 加载配置文件
 	if resolved := resolveConfigPath(configPath); resolved != "" {
+		configPath = resolved
+		configDir = filepath.Dir(resolved)
 		if err := k.Load(file.Provider(resolved), kyaml.Parser()); err != nil {
 			return nil, fmt.Errorf("load config file failed: %w", err)
 		}
@@ -78,7 +83,11 @@ func New(opts ...Option) (*Config, error) {
 		return nil, fmt.Errorf("load env failed: %w", err)
 	}
 
-	return &Config{k: k}, nil
+	return &Config{
+		k:          k,
+		configPath: configPath,
+		configDir:  configDir,
+	}, nil
 }
 
 func resolveConfigPath(path string) string {
@@ -96,6 +105,45 @@ func resolveConfigPath(path string) string {
 		}
 	}
 	return ""
+}
+
+// Path 返回当前加载配置文件路径。
+func (c *Config) Path() string {
+	if c == nil {
+		return ""
+	}
+	return c.configPath
+}
+
+// Dir 返回当前加载配置文件所在目录。
+func (c *Config) Dir() string {
+	if c == nil {
+		return ""
+	}
+	return c.configDir
+}
+
+// ResolvePath 将相对路径按配置文件所在目录解析为绝对路径。
+func (c *Config) ResolvePath(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	if filepath.IsAbs(path) {
+		abs, err := filepath.Abs(path)
+		if err == nil {
+			return abs
+		}
+		return filepath.Clean(path)
+	}
+	baseDir := "."
+	if c != nil && strings.TrimSpace(c.configDir) != "" {
+		baseDir = c.configDir
+	}
+	abs, err := filepath.Abs(filepath.Join(baseDir, path))
+	if err != nil {
+		return filepath.Clean(filepath.Join(baseDir, path))
+	}
+	return abs
 }
 
 // defaults 设置默认值
@@ -141,6 +189,7 @@ func defaults(k *koanf.Koanf) {
 	k.Set("skills.root_dir", "skills")
 	k.Set("skills.poll_interval_sec", 3)
 	k.Set("skills.exec_timeout_sec", 60)
+	k.Set("tool.file_write.output_dir", "storage/output_data")
 }
 
 // String 获取字符串

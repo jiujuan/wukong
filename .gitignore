@@ -41,3 +41,10 @@ build/
 
 # skills
 skills/
+!wukong/pkg/skills/
+!wukong/pkg/skills/**
+
+.codex
+
+
+wukong/storage/output_data/*

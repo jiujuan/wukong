@@ -37,6 +37,35 @@ func (r *recordingChatLLM) Chat(ctx context.Context, messages []llm.Message) (*l
 	}, nil
 }
 
+type streamingFallbackChatLLM struct {
+	chatReply    string
+	streamErr    error
+	streamChunks []string
+	lastMessages []llm.Message
+}
+
+func (r *streamingFallbackChatLLM) Chat(ctx context.Context, messages []llm.Message) (*llm.ChatResponse, error) {
+	r.lastMessages = append([]llm.Message(nil), messages...)
+	return &llm.ChatResponse{
+		Choices: []llm.Choice{{
+			Message: llm.Message{Role: "assistant", Content: r.chatReply},
+		}},
+	}, nil
+}
+
+func (r *streamingFallbackChatLLM) StreamChat(ctx context.Context, messages []llm.Message, handler func(chunk string)) error {
+	r.lastMessages = append([]llm.Message(nil), messages...)
+	for _, chunk := range r.streamChunks {
+		if handler != nil {
+			handler(chunk)
+		}
+	}
+	if r.streamErr != nil {
+		return r.streamErr
+	}
+	return nil
+}
+
 type fakeChatRepo struct {
 	sessions   map[string]*model.ChatSession
 	messages   map[string][]*model.ChatMessage
@@ -454,6 +483,31 @@ func TestChatServiceIgnoresMemoryWriteFailures(t *testing.T) {
 	}
 	if msg == nil || msg.Content != "still works" {
 		t.Fatalf("unexpected assistant message: %+v", msg)
+	}
+}
+
+func TestChatServiceFallsBackWhenStreamChatFails(t *testing.T) {
+	repo := newFakeChatRepo()
+	sessionID := "session-stream-fallback"
+	userID := "user-stream-fallback"
+	repo.sessions[sessionID] = &model.ChatSession{SessionID: sessionID, UserID: userID}
+
+	llmClient := &streamingFallbackChatLLM{
+		chatReply:    "fallback answer",
+		streamErr:    errors.New("stream failed"),
+		streamChunks: []string{},
+	}
+	svc := &ChatService{repo: repo, llmProvider: llmClient}
+
+	msg, err := svc.SendMessage(context.Background(), userID, sessionID, "hello", "")
+	if err != nil {
+		t.Fatalf("stream failure should fallback, got err: %v", err)
+	}
+	if msg == nil || msg.Content != "fallback answer" {
+		t.Fatalf("unexpected assistant message: %+v", msg)
+	}
+	if !containsLLMMessage(llmClient.lastMessages, "user", "hello") {
+		t.Fatalf("expected user message in fallback request: %+v", llmClient.lastMessages)
 	}
 }
 

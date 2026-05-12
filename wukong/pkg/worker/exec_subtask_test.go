@@ -67,8 +67,9 @@ type fakeTool struct {
 	result      map[string]any
 }
 
-func (t *fakeTool) Name() string        { return t.name }
-func (t *fakeTool) Description() string { return t.description }
+func (t *fakeTool) Name() string                        { return t.name }
+func (t *fakeTool) Description() string                 { return t.description }
+func (t *fakeTool) ParameterSchema() []tool.ParamSchema { return nil }
 func (t *fakeTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	t.called++
 	out := map[string]any{"tool": t.name}
@@ -196,6 +197,31 @@ func TestActionPromptBuilderBuildMessages(t *testing.T) {
 	}
 	if !strings.Contains(msgs[1].Content, "sub-1") || !strings.Contains(msgs[1].Content, "golang") {
 		t.Fatalf("user prompt missing key fields: %q", msgs[1].Content)
+	}
+}
+
+func TestActionPromptBuilderBuildMessagesIncludesContextEngineBlocks(t *testing.T) {
+	builder := NewActionPromptBuilderWithRegistry(newTestRegistry())
+	msgs, err := builder.BuildMessages(context.Background(), &fakeSubTask{
+		subTaskID: "sub-ctx-1",
+		taskID:    "task-ctx-1",
+		action:    "web_search",
+		params: map[string]any{
+			"query":       "context prompt",
+			"task_status": "RUNNING",
+		},
+	})
+	if err != nil {
+		t.Fatalf("build messages failed: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("unexpected message count: %d", len(msgs))
+	}
+	if !strings.Contains(msgs[1].Content, "TaskState:") || !strings.Contains(msgs[1].Content, "task_id: task-ctx-1") {
+		t.Fatalf("expected task state context in prompt: %q", msgs[1].Content)
+	}
+	if !strings.Contains(msgs[1].Content, "SkillSpec:") || !strings.Contains(msgs[1].Content, "skill_name: web_search") {
+		t.Fatalf("expected skill spec context in prompt: %q", msgs[1].Content)
 	}
 }
 

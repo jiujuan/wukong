@@ -166,7 +166,7 @@ export function ChatPage() {
         <div className="border-b border-zinc-100 px-5 py-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-zinc-900">晴景助手</div>
+              <div className="text-sm font-semibold text-zinc-900">悟空助手</div>
               <div className="mt-1 text-xs text-zinc-400">轻量对话模式，实时生成回复</div>
             </div>
             <div className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-600">

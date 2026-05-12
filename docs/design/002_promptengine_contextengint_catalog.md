@@ -24,7 +24,7 @@ wukong/pkg/
 
 ```text
   compose/
-    messagebuilder.go
+    promptbuilder.go
 ```
 
 或者先不建，先由业务层自己串起来也行。
@@ -110,7 +110,7 @@ pkg/engine/
 - `pkg/context/`
 
 两个独立目录，先分开设计和实现。  
-组合层先不急着抽目录，等你开始接 `chat/planner/worker` 时，如果重复串联逻辑明显，再加一个 `pkg/compose/` 或 `pkg/messagebuilder/`。
+组合层先不急着抽目录，等你开始接 `chat/planner/worker` 时，如果重复串联逻辑明显，再加一个 `pkg/compose/` 或 `pkg/promptbuilder/`。
 
 如果你愿意，我下一步可以直接给你一版“推荐的 pkg 目录树 + 每个文件职责说明”。
 
@@ -140,7 +140,7 @@ wukong/pkg/
     types.go
     contextengine_test.go
 
-  messagebuilder/
+  promptbuilder/
     builder.go
     types.go
     builder_test.go
@@ -337,7 +337,7 @@ context 模块测试。
 
 ---
 
-# 三、`pkg/messagebuilder/`
+# 三、`pkg/promptbuilder/`
 
 这个目录不是第一步必须建，但我建议预留。  
 它的作用是把 `ContextEngine + PromptEngine` 串起来，给业务层一个更干净的统一入口。
@@ -440,7 +440,7 @@ pkg/
 当业务里出现明显重复的“先 build context，再 render prompt”代码时，再加：
 
 ```text
-pkg/messagebuilder/
+pkg/promptbuilder/
 ```
 
 ---
@@ -452,15 +452,15 @@ pkg/messagebuilder/
 ```text
 context  -> only own types and source deps
 prompt   -> llm types + own render types
-messagebuilder -> context + prompt
-business -> messagebuilder or context+prompt
+promptbuilder -> context + prompt
+business -> promptbuilder or context+prompt
 ```
 
 更直白一点：
 
 - `context` 不依赖 `prompt`
 - `prompt` 不依赖 `context` 的复杂实现
-- `messagebuilder` 才负责组合
+- `promptbuilder` 才负责组合
 - `chat/task/planner/worker` 尽量不要自己手搓拼接
 
 ---
@@ -494,12 +494,12 @@ business -> messagebuilder or context+prompt
 
 ---
 
-## `pkg/messagebuilder/` 适合放
+## `pkg/promptbuilder/` 适合放
 - 场景到模板绑定
 - context 到 prompt 的桥接
 - 最终 message 构建
 
-## `pkg/messagebuilder/` 不适合放
+## `pkg/promptbuilder/` 不适合放
 - 复杂业务逻辑
 - 任务执行状态机
 - memory 持久化
@@ -514,13 +514,13 @@ business -> messagebuilder or context+prompt
 wukong/pkg/
   prompt/
   context/
-  messagebuilder/   # 可后置
+  promptbuilder/   # 可后置
 ```
 
 也就是：
 
 - `prompt` 和 `context` 必须独立目录
-- `messagebuilder` 作为组合层，先可选，后再加
+- `promptbuilder` 作为组合层，先可选，后再加
 
 这样最稳，也最不容易把边界做乱。
 

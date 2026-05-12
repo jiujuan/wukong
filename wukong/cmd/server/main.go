@@ -148,6 +148,7 @@ func main() {
 		tool.WithSkillsRegistry(skillRegistry),
 		tool.WithMemoryStore(memoryManager),
 		tool.WithBaseDir(cfg.String("skills.root_dir", "skills")),
+		tool.WithFileWriteDir(cfg.ResolvePath(cfg.String("tool.file_write.output_dir", "storage/output_data"))),
 		tool.WithExecTimeout(time.Duration(cfg.Int("skills.exec_timeout_sec", 60))*time.Second),
 	)
 
@@ -155,7 +156,7 @@ func main() {
 	mgr := manager.NewManager(taskRepo)
 	mgr.SetLogger(log.With())
 	mgr.SetStreamPublisher(streamService)
-	mgr.SetPlanner(manager.NewLLMPlanner(llmProvider, manager.NewTplPlanner()))
+	mgr.SetPlanner(manager.NewLLMPlannerWithRegistry(llmProvider, manager.NewTplPlanner(), skillRegistry))
 
 	log.Info("init worker pool...")
 

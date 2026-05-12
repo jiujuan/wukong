@@ -8,51 +8,6 @@ import (
 	"sync"
 )
 
-type BuildRequest struct {
-	Scene     string
-	UserID    string
-	SessionID string
-	TaskID    string
-	SkillName string
-	Query     string
-	Variables map[string]any
-}
-
-type ContextBlock struct {
-	Name      string
-	Type      string
-	Source    string
-	Content   string
-	Priority  int
-	Tokens    int
-	Timestamp int64
-}
-
-type ContextBundle struct {
-	Scene  string
-	Blocks []ContextBlock
-	Named  map[string]string
-	Text   string
-	Meta   map[string]any
-}
-
-type Source interface {
-	Name() string
-	Load(ctx stdctx.Context, req BuildRequest) ([]ContextBlock, error)
-}
-
-type Policy interface {
-	Name() string
-	Apply(ctx stdctx.Context, blocks []ContextBlock, req BuildRequest) ([]ContextBlock, error)
-}
-
-type SceneConfig struct {
-	Name     string
-	Sources  []string
-	Policies []string
-	Options  map[string]any
-}
-
 type Engine struct {
 	mu       sync.RWMutex
 	sources  map[string]Source
@@ -249,46 +204,4 @@ func (e *Engine) resolvePolicies(names []string) ([]Policy, error) {
 		result = append(result, policy)
 	}
 	return result, nil
-}
-
-func normalizeBlocks(defaultSource string, blocks []ContextBlock) []ContextBlock {
-	out := make([]ContextBlock, 0, len(blocks))
-	for _, block := range blocks {
-		block.Name = strings.TrimSpace(block.Name)
-		block.Type = strings.TrimSpace(block.Type)
-		block.Source = strings.TrimSpace(block.Source)
-		block.Content = strings.TrimSpace(block.Content)
-		if block.Content == "" {
-			continue
-		}
-		if block.Source == "" {
-			block.Source = defaultSource
-		}
-		out = append(out, block)
-	}
-	return out
-}
-
-func formatBlockText(block ContextBlock) string {
-	if block.Name == "" {
-		return block.Content
-	}
-	return fmt.Sprintf("[%s]\n%s", block.Name, block.Content)
-}
-
-func cloneScene(src SceneConfig) SceneConfig {
-	dst := src
-	if src.Sources != nil {
-		dst.Sources = append([]string(nil), src.Sources...)
-	}
-	if src.Policies != nil {
-		dst.Policies = append([]string(nil), src.Policies...)
-	}
-	if src.Options != nil {
-		dst.Options = make(map[string]any, len(src.Options))
-		for k, v := range src.Options {
-			dst.Options[k] = v
-		}
-	}
-	return dst
 }

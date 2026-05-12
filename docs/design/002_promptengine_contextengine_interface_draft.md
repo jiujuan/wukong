@@ -305,14 +305,14 @@ func (e *Engine) Build(ctx stdctx.Context, req BuildRequest) (*ContextBundle, er
 
 ---
 
-# 三、`pkg/messagebuilder/` 接口草案
+# 三、`pkg/promptbuilder/` 接口草案
 
 这个目录是桥接层，专门把 `context + prompt` 串起来。
 
 ## 1. `types.go`
 
 ```go
-package messagebuilder
+package promptbuilder
 
 import (
 	stdctx "context"
@@ -346,7 +346,7 @@ import "github.com/jiujuan/wukong/pkg/llm"
 ## 2. `builder.go`
 
 ```go
-package messagebuilder
+package promptbuilder
 
 import (
 	stdctx "context"
@@ -394,7 +394,7 @@ func (b *Builder) ResolveTemplate(scene string) (string, bool)
 ## 1. ChatService 未来调用方式
 
 ```go
-result, err := builder.BuildMessages(ctx, messagebuilder.BuildRequest{
+result, err := builder.BuildMessages(ctx, promptbuilder.BuildRequest{
 	Scene:       "chat",
 	TemplateKey: "chat.session.default",
 	Context: wkcontext.BuildRequest{
@@ -420,7 +420,7 @@ resp, err := llmProvider.Chat(ctx, result.Messages)
 ## 2. Planner 调用方式
 
 ```go
-result, err := builder.BuildMessages(ctx, messagebuilder.BuildRequest{
+result, err := builder.BuildMessages(ctx, promptbuilder.BuildRequest{
 	Scene:       "planner",
 	TemplateKey: "planner.task.default",
 	Context: wkcontext.BuildRequest{
@@ -441,7 +441,7 @@ result, err := builder.BuildMessages(ctx, messagebuilder.BuildRequest{
 ## 3. Worker / ReAct 调用方式
 
 ```go
-result, err := builder.BuildMessages(ctx, messagebuilder.BuildRequest{
+result, err := builder.BuildMessages(ctx, promptbuilder.BuildRequest{
 	Scene:       "worker",
 	TemplateKey: "worker.action.default",
 	Context: wkcontext.BuildRequest{
@@ -504,7 +504,7 @@ type Formatter interface {
 - `Policy`
 - `Engine.Build`
 
-## `pkg/messagebuilder`
+## `pkg/promptbuilder`
 - `Builder`
 - `BuildRequest`
 - `BuildResult`

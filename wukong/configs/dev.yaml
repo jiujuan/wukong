@@ -39,3 +39,7 @@ worker:
   queue_size: 1000
   idle_timeout: 60
   max_retries: 3
+
+tool:
+  file_write:
+    output_dir: "../storage/output_data"

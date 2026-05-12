@@ -9,11 +9,12 @@ import (
 	"testing"
 
 	"github.com/jiujuan/wukong/pkg/llm"
+	"github.com/jiujuan/wukong/pkg/skills"
 )
 
 func TestLLMPlannerFallbackWhenInvalidJSON(t *testing.T) {
 	provider := newTestProvider(t, `not-json`)
-	planner := NewLLMPlanner(provider, NewTplPlanner())
+	planner := NewLLMPlannerWithRegistry(provider, NewTplPlanner(), skills.New())
 
 	defs, err := planner.PlanSubTasks(context.Background(), newSearchTask())
 	if err != nil {
@@ -65,8 +66,11 @@ func TestLLMPlannerUsesPromptEngineMessages(t *testing.T) {
 	if (*requests)[0].Messages[0].Role != "system" || (*requests)[0].Messages[1].Role != "user" {
 		t.Fatalf("unexpected planner messages: %#v", (*requests)[0].Messages)
 	}
-	if (*requests)[0].Messages[1].Content == "" || !containsAll((*requests)[0].Messages[1].Content, []string{"task_id=task_test_1", "skill=search"}) {
+	if (*requests)[0].Messages[1].Content == "" || !containsAll((*requests)[0].Messages[1].Content, []string{"task_id=task_test_1", "skill=search", "task_state=", "skill_spec="}) {
 		t.Fatalf("unexpected planner user prompt: %q", (*requests)[0].Messages[1].Content)
+	}
+	if !strings.Contains((*requests)[0].Messages[1].Content, "skill_name: search") {
+		t.Fatalf("expected planner prompt to include skill spec context: %q", (*requests)[0].Messages[1].Content)
 	}
 }
 

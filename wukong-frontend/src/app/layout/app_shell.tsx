@@ -24,7 +24,7 @@ const navGroups = [
   {
     title: '概览',
     items: [
-      { to: '/chat', label: '晴景助手', icon: Sparkles },
+      { to: '/chat', label: '悟空助手', icon: Sparkles },
       { to: '/tasks', label: '任务中心', icon: ListTodo },
     ],
   },
@@ -39,7 +39,7 @@ const navGroups = [
 ]
 
 const pageTitles: Record<string, string> = {
-  '/chat': '晴景助手',
+  '/chat': '悟空助手',
   '/tasks': '任务中心',
   '/memory': '记忆文件',
   '/skills': '服务管理',
