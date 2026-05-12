@@ -2,6 +2,15 @@ package skills
 
 import "context"
 
+type SourceType string
+
+const (
+	SourceBuiltin SourceType = "builtin"
+	SourceLocal   SourceType = "local"
+	SourceVendor  SourceType = "vendor"
+	SourceLegacy  SourceType = "legacy"
+)
+
 type Param struct {
 	Name       string `json:"name"`
 	Type       string `json:"type"`
@@ -17,6 +26,22 @@ type MemoryConfig struct {
 	ExpireTime     string `json:"expire_time,omitempty"`
 }
 
+type PackageMeta struct {
+	SourceType   SourceType `json:"source_type"`
+	PackageName  string     `json:"package_name,omitempty"`
+	Version      string     `json:"version,omitempty"`
+	Homepage     string     `json:"homepage,omitempty"`
+	Runtime      string     `json:"runtime,omitempty"`
+	Entry        string     `json:"entry,omitempty"`
+	RootDir      string     `json:"root_dir,omitempty"`
+	ManifestPath string     `json:"manifest_path,omitempty"`
+}
+
+type SkillRoot struct {
+	Type SourceType `json:"type"`
+	Dir  string     `json:"dir"`
+}
+
 type Skill struct {
 	SkillName   string       `json:"skill_name"`
 	Description string       `json:"description"`
@@ -28,6 +53,7 @@ type Skill struct {
 	Template    string       `json:"template,omitempty"`
 	Memory      MemoryConfig `json:"memory"`
 	SourcePath  string       `json:"source_path,omitempty"`
+	Package     PackageMeta  `json:"package,omitempty"`
 }
 
 type MetaStore interface {

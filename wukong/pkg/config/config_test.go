@@ -156,3 +156,25 @@ func TestConfigResolvePath(t *testing.T) {
 		t.Fatalf("ResolvePath() = %q, want %q", got, want)
 	}
 }
+
+func TestSkillsRootDirDefaultAndResolvePath(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "dev.yaml")
+	content := []byte("server:\n  host: \"127.0.0.1\"\n")
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("write temp config failed: %v", err)
+	}
+
+	cfg, err := New(WithConfigPath(configPath))
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+
+	if got := cfg.String("skills.root_dir", "../skills"); got != "../skills" {
+		t.Fatalf("skills.root_dir = %q, want ../skills", got)
+	}
+	want := filepath.Join(dir, "..", "skills")
+	if got := cfg.ResolvePath(cfg.String("skills.root_dir", "../skills")); got != filepath.Clean(want) {
+		t.Fatalf("resolved skills root = %q, want %q", got, filepath.Clean(want))
+	}
+}

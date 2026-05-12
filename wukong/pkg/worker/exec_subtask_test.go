@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -358,5 +360,100 @@ func TestSkillAwareActionExecutor(t *testing.T) {
 	}
 	if result["output"] != "fallback" {
 		t.Fatalf("unexpected fallback result: %#v", result)
+	}
+}
+
+func TestIntegrationFileSkillWritesOnlyUnderAllowedDirAndReturnsTaskResult(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "file_skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir failed: %v", err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	content := strings.Join([]string{
+		"# Skill: file_skill",
+		"## Description",
+		"file write skill",
+		"## Tools",
+		"- file_write",
+	}, "\n")
+	if err := os.WriteFile(skillFile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write skill file failed: %v", err)
+	}
+
+	registry := skills.New(skills.WithRootDir(root))
+	if err := registry.Start(context.Background()); err != nil {
+		t.Fatalf("start registry failed: %v", err)
+	}
+	defer registry.Stop()
+
+	outputDir := t.TempDir()
+	manager := tool.NewManager(
+		tool.WithSkillsRegistry(registry),
+		tool.WithFileWriteDir(outputDir),
+	)
+	executor := NewSubTaskExecutorWithTools(nil, nil, nil, manager, registry)
+	executor.RegisterActionExecutor("file_skill", NewSkillAwareActionExecutor(manager, registry, nil))
+
+	task := &queue.Task{
+		TaskID: "task-file-1",
+		Data: &fakeSubTask{
+			subTaskID: "sub-file-1",
+			taskID:    "task-file-1",
+			action:    "file_skill",
+			params: map[string]any{
+				"skill_name": "file_skill",
+				"tool_name":  "file_write",
+				"path":       "reports/daily.md",
+				"content":    "hello file skill",
+			},
+		},
+	}
+
+	if err := executor.Handle(context.Background(), task); err != nil {
+		t.Fatalf("handle failed: %v", err)
+	}
+
+	sub := task.Data.(*fakeSubTask)
+	if sub.result == nil {
+		t.Fatal("result should be set")
+	}
+	if sub.result["tool"] != "file_write" {
+		t.Fatalf("unexpected tool annotation: %#v", sub.result)
+	}
+	gotPath, ok := sub.result["path"].(string)
+	if !ok || gotPath == "" {
+		t.Fatalf("path missing from result: %#v", sub.result)
+	}
+	wantPath := filepath.Join(outputDir, "file_skill", "reports", "daily.md")
+	if gotPath != wantPath {
+		t.Fatalf("path = %q, want %q", gotPath, wantPath)
+	}
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("written file missing: %v", err)
+	}
+	data, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read written file failed: %v", err)
+	}
+	if string(data) != "hello file skill" {
+		t.Fatalf("file content = %q, want %q", string(data), "hello file skill")
+	}
+	if !sub.updatedAt {
+		t.Fatalf("updatedAt should be set")
+	}
+	if sub.errMsg != "" {
+		t.Fatalf("unexpected subtask error: %q", sub.errMsg)
+	}
+
+	_, err = manager.ExecuteForSkill(context.Background(), "file_skill", "file_write", map[string]any{
+		"path":    "../escape.md",
+		"content": "nope",
+	})
+	if err == nil {
+		t.Fatalf("expected escape write to fail")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "out of base dir") {
+		t.Fatalf("unexpected escape error: %v", err)
 	}
 }

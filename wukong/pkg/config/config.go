@@ -186,10 +186,10 @@ func defaults(k *koanf.Koanf) {
 	k.Set("llm.fallback2.base_url", "")
 	k.Set("llm.fallback2.api_key", "")
 	k.Set("llm.fallback2.model", "")
-	k.Set("skills.root_dir", "skills")
+	k.Set("skills.root_dir", "../skills")
 	k.Set("skills.poll_interval_sec", 3)
 	k.Set("skills.exec_timeout_sec", 60)
-	k.Set("tool.file_write.output_dir", "storage/output_data")
+	k.Set("tool.file_write.output_dir", "../storage/output_data")
 }
 
 // String 获取字符串

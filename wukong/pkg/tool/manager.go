@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -30,11 +31,12 @@ type Manager struct {
 
 func NewManager(opts ...Option) *Manager {
 	m := &Manager{
-		tools:        make(map[string]Tool),
-		logger:       pkglogger.FromSlog(slog.Default()),
-		memoryStore:  NewInMemoryStore(),
-		baseDir:      ".",
-		fileWriteDir: "storage/output_data",
+		tools:          make(map[string]Tool),
+		logger:         pkglogger.FromSlog(slog.Default()),
+		skillsRegistry: skills.New(),
+		memoryStore:    NewInMemoryStore(),
+		baseDir:        ".",
+		fileWriteDir:   "storage/output_data",
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -121,20 +123,40 @@ func (m *Manager) Execute(ctx context.Context, name string, params map[string]an
 func (m *Manager) ExecuteForSkill(ctx context.Context, skillName, toolName string, params map[string]any) (map[string]any, error) {
 	normalizedSkill := strings.ToLower(strings.TrimSpace(skillName))
 	normalizedTool := strings.ToLower(strings.TrimSpace(toolName))
-	if m.skillsRegistry != nil {
-		if _, exists := m.skillsRegistry.Get(normalizedSkill); !exists {
-			m.logger.Warn("[ToolManager] skill not found, bypass tool policy and execute directly",
-				"skill", normalizedSkill, "tool", normalizedTool,
-			)
-			return m.Execute(ctx, normalizedTool, params)
-		}
-		if !m.skillsRegistry.CanUseTool(normalizedSkill, normalizedTool) {
-			m.logger.Warn("[ToolManager] execute blocked by policy",
-				"skill", normalizedSkill, "tool", normalizedTool,
-			)
-			return nil, fmt.Errorf("tool %s is not allowed for skill %s", normalizedTool, normalizedSkill)
-		}
+	if m.skillsRegistry == nil {
+		return nil, fmt.Errorf("skills registry is not configured")
 	}
+	skill, exists := m.skillsRegistry.Get(normalizedSkill)
+	if !exists {
+		m.logger.Warn("[ToolManager] execute blocked: skill not found",
+			"skill", normalizedSkill, "tool", normalizedTool,
+		)
+		return nil, fmt.Errorf("skill not found: %s", normalizedSkill)
+	}
+	if !m.skillsRegistry.CanUseTool(normalizedSkill, normalizedTool) {
+		m.logger.Warn("[ToolManager] execute blocked by policy",
+			"skill", normalizedSkill, "tool", normalizedTool,
+		)
+		return nil, fmt.Errorf("tool %s is not allowed for skill %s", normalizedTool, normalizedSkill)
+	}
+	skillCtx := tooltools.SkillContext{
+		SkillName:   skill.SkillName,
+		Version:     skill.Version,
+		SourceType:  string(skill.Package.SourceType),
+		PackageName: skill.Package.PackageName,
+	}
+	if strings.TrimSpace(skill.Package.RootDir) != "" {
+		skillCtx.SkillRoot = skill.Package.RootDir
+	} else if strings.TrimSpace(skill.SourcePath) != "" {
+		skillCtx.SkillRoot = filepath.Dir(skill.SourcePath)
+	}
+	if strings.TrimSpace(skillCtx.SkillRoot) != "" {
+		skillCtx.SkillRoot = filepath.Clean(skillCtx.SkillRoot)
+	}
+	if strings.TrimSpace(m.fileWriteDir) != "" && strings.TrimSpace(skillCtx.SkillName) != "" {
+		skillCtx.OutputDir = filepath.Join(m.fileWriteDir, skillCtx.SkillName)
+	}
+	ctx = tooltools.WithSkillContext(ctx, skillCtx)
 	m.logger.Info("[ToolManager] execute for skill",
 		"skill", normalizedSkill, "tool", normalizedTool,
 	)

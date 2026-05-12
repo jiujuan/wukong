@@ -143,4 +143,11 @@ func TestExecuteWithParams(t *testing.T) {
 	if !strings.Contains(output, `"query":"golang"`) {
 		t.Fatalf("params not injected in output: %s", output)
 	}
+	stdout := strings.TrimSpace(result["stdout"].(string))
+	if stdout == "" {
+		t.Fatalf("stdout should not be empty: %#v", result)
+	}
+	if !strings.Contains(stdout, "echo_skill|") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
 }

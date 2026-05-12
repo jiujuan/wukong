@@ -28,6 +28,11 @@ log:
   level: "info"
   format: "json"
 
+skills:
+  root_dir: "../skills"
+  poll_interval_sec: 3
+  exec_timeout_sec: 60
+
 llm:
   base_url: "https://api.deepseek.com/v1"
   api_key: "sk-55df4566022243a597a0ab1d619526a6"

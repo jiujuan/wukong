@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -19,7 +20,7 @@ var (
 func skillSandbox() *sandbox.Sandbox {
 	skillSandboxOnce.Do(func() {
 		skillSandboxInst = sandbox.New(
-			sandbox.WithAllowedEnvKeys("SKILL_NAME", "SKILL_PARAMS"),
+			sandbox.WithAllowedEnvKeys("SKILL_NAME", "SKILL_PARAMS", "WUKONG_SKILL_ROOT", "WUKONG_OUTPUT_DIR"),
 		)
 	})
 	return skillSandboxInst
@@ -45,19 +46,32 @@ func (r *Registry) ExecuteWithParams(ctx context.Context, skillName string, para
 		return nil, fmt.Errorf("skill execute entry empty: %s", skillName)
 	}
 
+	rootDir := skillRootDir(item)
+	if rootDir == "" {
+		return nil, fmt.Errorf("skill root empty: %s", skillName)
+	}
 	scriptPath := item.Execute
-	if item.SourcePath != "" {
-		scriptPath = filepath.Join(filepath.Dir(item.SourcePath), item.Execute)
+	if !filepath.IsAbs(scriptPath) {
+		scriptPath = filepath.Join(rootDir, item.Execute)
 	}
 	absPath, err := filepath.Abs(scriptPath)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateSkillPackage(rootDir, item); err != nil {
+		return nil, err
+	}
+	outputDir := skillOutputDir(item.SkillName)
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return nil, err
 	}
 	runCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 	defer cancel()
 
 	envMap := map[string]string{
-		"SKILL_NAME": item.SkillName,
+		"SKILL_NAME":        item.SkillName,
+		"WUKONG_SKILL_ROOT": rootDir,
+		"WUKONG_OUTPUT_DIR": outputDir,
 	}
 	if len(params) > 0 {
 		raw, err := json.Marshal(params)
@@ -66,17 +80,21 @@ func (r *Registry) ExecuteWithParams(ctx context.Context, skillName string, para
 		}
 		envMap["SKILL_PARAMS"] = string(raw)
 	}
-	runtimeName := runtimeFromScript(absPath)
+	runtimeName := strings.TrimSpace(item.Package.Runtime)
+	if runtimeName == "" {
+		runtimeName = runtimeFromScript(absPath)
+	}
 	if strings.TrimSpace(runtimeName) == "" {
 		return nil, fmt.Errorf("unsupported execute script extension: %s", filepath.Ext(absPath))
 	}
 
 	result, err := skillSandbox().Execute(runCtx, sandbox.Request{
-		Runtime:    runtimeName,
-		ScriptPath: absPath,
-		WorkDir:    filepath.Dir(absPath),
-		Env:        envMap,
-		Timeout:    r.execTimeout,
+		Runtime:          runtimeName,
+		ScriptPath:       absPath,
+		WorkDir:          rootDir,
+		Env:              envMap,
+		Timeout:          r.execTimeout,
+		AllowedWorkRoots: []string{rootDir, outputDir},
 	})
 	output := combineSkillOutput(result.Stdout, result.Stderr)
 	payload := map[string]any{
@@ -86,6 +104,9 @@ func (r *Registry) ExecuteWithParams(ctx context.Context, skillName string, para
 		"stderr":     result.Stderr,
 		"exit_code":  result.ExitCode,
 		"truncated":  result.Truncated,
+		"skill_root": rootDir,
+		"output_dir": outputDir,
+		"package":    item.Package,
 	}
 	if err != nil {
 		payload["error"] = err.Error()
@@ -95,6 +116,27 @@ func (r *Registry) ExecuteWithParams(ctx context.Context, skillName string, para
 		return payload, err
 	}
 	return payload, nil
+}
+
+func skillRootDir(item *Skill) string {
+	if item == nil {
+		return ""
+	}
+	if strings.TrimSpace(item.Package.RootDir) != "" {
+		return filepath.Clean(item.Package.RootDir)
+	}
+	if strings.TrimSpace(item.SourcePath) != "" {
+		return filepath.Clean(filepath.Dir(item.SourcePath))
+	}
+	return ""
+}
+
+func skillOutputDir(skillName string) string {
+	name := normalizeSkillName(skillName)
+	if name == "" {
+		name = "skill"
+	}
+	return filepath.Join("storage", "output_data", name)
 }
 
 func runtimeFromScript(path string) string {

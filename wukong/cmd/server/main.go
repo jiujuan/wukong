@@ -131,8 +131,9 @@ func main() {
 	streamService := service.NewStreamService(streamRepo)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	skillsRoot := cfg.ResolvePath(cfg.String("skills.root_dir", "../skills"))
 	skillRegistry := skills.New(
-		skills.WithRootDir(cfg.String("skills.root_dir", "skills")),
+		skills.WithRootDir(skillsRoot),
 		skills.WithPollInterval(time.Duration(cfg.Int("skills.poll_interval_sec", 3))*time.Second),
 		skills.WithExecTimeout(time.Duration(cfg.Int("skills.exec_timeout_sec", 60))*time.Second),
 		skills.WithLogger(log.With()),
@@ -147,7 +148,7 @@ func main() {
 		tool.WithLLMProvider(llmProvider),
 		tool.WithSkillsRegistry(skillRegistry),
 		tool.WithMemoryStore(memoryManager),
-		tool.WithBaseDir(cfg.String("skills.root_dir", "skills")),
+		tool.WithBaseDir(skillsRoot),
 		tool.WithFileWriteDir(cfg.ResolvePath(cfg.String("tool.file_write.output_dir", "storage/output_data"))),
 		tool.WithExecTimeout(time.Duration(cfg.Int("skills.exec_timeout_sec", 60))*time.Second),
 	)

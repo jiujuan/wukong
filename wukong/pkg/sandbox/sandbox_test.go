@@ -47,6 +47,29 @@ func main() {}
 	}
 }
 
+func TestRequestAllowedWorkRootsOverridePolicy(t *testing.T) {
+	policyRoot := t.TempDir()
+	requestRoot := t.TempDir()
+	script := filepath.Join(requestRoot, "main.go")
+	if err := os.WriteFile(script, []byte(`package main
+func main() {}
+`), 0o644); err != nil {
+		t.Fatalf("write script failed: %v", err)
+	}
+	s := New(WithPolicy(Policy{
+		AllowedCommands:  defaultAllowedCommands(),
+		AllowedWorkRoots: []string{policyRoot},
+	}))
+
+	if err := s.Validate(Request{
+		Runtime:          "go",
+		ScriptPath:       script,
+		AllowedWorkRoots: []string{requestRoot},
+	}); err != nil {
+		t.Fatalf("Validate() error = %v, want request roots to allow script", err)
+	}
+}
+
 func TestEnvFiltering(t *testing.T) {
 	got := filterAllowedEnv(map[string]string{
 		"PATH":      "keep",

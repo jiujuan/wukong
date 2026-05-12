@@ -2,6 +2,7 @@ package skills
 
 import (
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -12,6 +13,28 @@ func WithRootDir(rootDir string) Option {
 	return func(r *Registry) {
 		if strings.TrimSpace(rootDir) != "" {
 			r.rootDir = rootDir
+			if len(r.roots) == 0 {
+				r.roots = defaultSkillRoots(rootDir)
+			}
+		}
+	}
+}
+
+func WithSkillRoots(roots ...SkillRoot) Option {
+	return func(r *Registry) {
+		cleaned := make([]SkillRoot, 0, len(roots))
+		for _, root := range roots {
+			dir := strings.TrimSpace(root.Dir)
+			if dir == "" {
+				continue
+			}
+			cleaned = append(cleaned, SkillRoot{
+				Type: normalizeSourceType(root.Type),
+				Dir:  dir,
+			})
+		}
+		if len(cleaned) > 0 {
+			r.roots = cleaned
 		}
 	}
 }
@@ -43,5 +66,32 @@ func WithLogger(logger *slog.Logger) Option {
 func WithMetaStore(store MetaStore) Option {
 	return func(r *Registry) {
 		r.store = store
+	}
+}
+
+func defaultSkillRoots(rootDir string) []SkillRoot {
+	rootDir = strings.TrimSpace(rootDir)
+	if rootDir == "" {
+		rootDir = "skills"
+	}
+	return []SkillRoot{
+		{Type: SourceLocal, Dir: filepath.Join(rootDir, "local")},
+		{Type: SourceVendor, Dir: filepath.Join(rootDir, "vendor")},
+		{Type: SourceLegacy, Dir: rootDir},
+	}
+}
+
+func normalizeSourceType(value SourceType) SourceType {
+	switch strings.ToLower(strings.TrimSpace(string(value))) {
+	case string(SourceBuiltin):
+		return SourceBuiltin
+	case string(SourceLocal):
+		return SourceLocal
+	case string(SourceVendor):
+		return SourceVendor
+	case string(SourceLegacy):
+		return SourceLegacy
+	default:
+		return SourceLegacy
 	}
 }

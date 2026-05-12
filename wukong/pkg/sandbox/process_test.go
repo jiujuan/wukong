@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -172,5 +173,112 @@ func main() {
 	})
 	if err == nil {
 		t.Fatalf("runProcess() error = nil, result=%#v", result)
+	}
+}
+
+func TestExecuteFiltersRequestEnvAtRuntime(t *testing.T) {
+	if _, ok := lookPathAny("go"); !ok {
+		t.Skip("go runtime not found")
+	}
+	dir := t.TempDir()
+	tempDir := filepath.Join(dir, "temp")
+	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+		t.Fatalf("create temp dir failed: %v", err)
+	}
+	t.Setenv("TEMP", tempDir)
+	t.Setenv("TMP", tempDir)
+	t.Setenv("TMPDIR", tempDir)
+	script := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(script, []byte(`package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	fmt.Printf("FOO=%s\n", os.Getenv("FOO"))
+	fmt.Printf("SECRET=%s\n", os.Getenv("SECRET"))
+}
+`), 0o644); err != nil {
+		t.Fatalf("write script failed: %v", err)
+	}
+
+	s := New(WithPolicy(Policy{
+		AllowedCommands: defaultAllowedCommands(),
+		AllowedEnvKeys: map[string]struct{}{
+			"foo":    {},
+			"gocache": {},
+			"temp":   {},
+			"tmp":    {},
+			"tmpdir": {},
+		},
+		AllowedWorkRoots: []string{dir},
+		DefaultTimeout:   10 * time.Second,
+		MaxOutputBytes:   1 << 20,
+	}))
+
+	result, err := s.Execute(context.Background(), Request{
+		Runtime:    "go",
+		ScriptPath: script,
+		WorkDir:    dir,
+		Env: map[string]string{
+			"FOO":    "visible",
+			"SECRET": "hidden",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v, stdout=%q stderr=%q", err, result.Stdout, result.Stderr)
+	}
+	output := result.Stdout + "\n" + result.Stderr
+	if !strings.Contains(output, "FOO=visible") {
+		t.Fatalf("output = %q, want FOO visible", output)
+	}
+	if strings.Contains(output, "SECRET=hidden") {
+		t.Fatalf("output = %q, want SECRET filtered", output)
+	}
+}
+
+func TestExecuteTruncatesOutputAtRuntime(t *testing.T) {
+	if _, ok := lookPathAny("go"); !ok {
+		t.Skip("go runtime not found")
+	}
+	dir := t.TempDir()
+	tempDir := filepath.Join(dir, "temp")
+	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+		t.Fatalf("create temp dir failed: %v", err)
+	}
+	t.Setenv("TEMP", tempDir)
+	t.Setenv("TMP", tempDir)
+	t.Setenv("TMPDIR", tempDir)
+	script := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(script, []byte(`package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("1234567890")
+}
+`), 0o644); err != nil {
+		t.Fatalf("write script failed: %v", err)
+	}
+
+	s := New(WithPolicy(Policy{
+		AllowedCommands:  defaultAllowedCommands(),
+		AllowedWorkRoots: []string{dir},
+		DefaultTimeout:   10 * time.Second,
+		MaxOutputBytes:   5,
+	}))
+
+	result, err := s.Execute(context.Background(), Request{
+		Runtime:    "go",
+		ScriptPath: script,
+		WorkDir:    dir,
+	})
+	if err == nil || !errors.Is(err, ErrOutputLimitExceeded) {
+		t.Fatalf("Execute() error = %v, want ErrOutputLimitExceeded", err)
+	}
+	if !result.Truncated {
+		t.Fatal("result.Truncated = false, want true")
 	}
 }
