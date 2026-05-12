@@ -21,6 +21,14 @@ func (t *MemoryReadTool) Name() string { return "memory_read" }
 
 func (t *MemoryReadTool) Description() string { return "读取记忆内容" }
 
+func (t *MemoryReadTool) ParameterSchema() []ParamSchema {
+	return []ParamSchema{
+		schemaItem("namespace", "string", false, "memory namespace", "default", "default"),
+		schemaItem("scope", "string", false, "alias for namespace", "default", "default"),
+		schemaItem("key", "string", true, "memory key", nil, "summary"),
+	}
+}
+
 func (t *MemoryReadTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	if t.store == nil {
 		t.logger.Error("[Tool] memory_read failed: store is nil")
@@ -63,6 +71,15 @@ func NewMemoryWriteTool(store MemoryStore, logger *pkglogger.Logger) *MemoryWrit
 func (t *MemoryWriteTool) Name() string { return "memory_write" }
 
 func (t *MemoryWriteTool) Description() string { return "写入记忆内容" }
+
+func (t *MemoryWriteTool) ParameterSchema() []ParamSchema {
+	return []ParamSchema{
+		schemaItem("namespace", "string", false, "memory namespace", "default", "default"),
+		schemaItem("scope", "string", false, "alias for namespace", "default", "default"),
+		schemaItem("key", "string", true, "memory key", nil, "summary"),
+		schemaItem("value", "object|any", true, "memory payload", nil, map[string]any{"summary": "hello"}),
+	}
+}
 
 func (t *MemoryWriteTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	if t.store == nil {

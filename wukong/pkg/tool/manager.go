@@ -76,14 +76,15 @@ func (m *Manager) Get(name string) (Tool, bool) {
 	return item, ok
 }
 
-func (m *Manager) List() []map[string]string {
+func (m *Manager) List() []ToolInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	items := make([]map[string]string, 0, len(m.tools))
+	items := make([]ToolInfo, 0, len(m.tools))
 	for _, t := range m.tools {
-		items = append(items, map[string]string{
-			"name":        t.Name(),
-			"description": t.Description(),
+		items = append(items, ToolInfo{
+			Name:        t.Name(),
+			Description: t.Description(),
+			Schema:      t.ParameterSchema(),
 		})
 	}
 	return items

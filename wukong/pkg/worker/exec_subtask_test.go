@@ -67,8 +67,9 @@ type fakeTool struct {
 	result      map[string]any
 }
 
-func (t *fakeTool) Name() string        { return t.name }
-func (t *fakeTool) Description() string { return t.description }
+func (t *fakeTool) Name() string                        { return t.name }
+func (t *fakeTool) Description() string                 { return t.description }
+func (t *fakeTool) ParameterSchema() []tool.ParamSchema { return nil }
 func (t *fakeTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	t.called++
 	out := map[string]any{"tool": t.name}

@@ -1,9 +1,13 @@
 package service
 
-import "context"
+import (
+	"context"
+
+	"github.com/jiujuan/wukong/pkg/tool"
+)
 
 type toolLister interface {
-	List() []map[string]string
+	List() []tool.ToolInfo
 }
 
 type ToolService struct {
@@ -14,7 +18,7 @@ func NewToolService(manager toolLister) *ToolService {
 	return &ToolService{manager: manager}
 }
 
-func (s *ToolService) ListTools(_ context.Context) []map[string]string {
+func (s *ToolService) ListTools(_ context.Context) []tool.ToolInfo {
 	if s == nil || s.manager == nil {
 		return nil
 	}

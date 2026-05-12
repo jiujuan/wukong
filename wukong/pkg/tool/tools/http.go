@@ -25,6 +25,15 @@ func (t *HTTPTool) Name() string { return "http_request" }
 
 func (t *HTTPTool) Description() string { return "发起外部 HTTP 请求" }
 
+func (t *HTTPTool) ParameterSchema() []ParamSchema {
+	return []ParamSchema{
+		schemaItem("method", "string", false, "http method", "GET", "POST"),
+		schemaItem("url", "string", true, "request url", nil, "https://example.com"),
+		schemaItem("body", "string", false, "request body", nil, ""),
+		schemaItem("headers", "object", false, "request headers", nil, map[string]any{"Authorization": "Bearer ..."}),
+	}
+}
+
 func (t *HTTPTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	method := strings.ToUpper(strings.TrimSpace(readString(params, "method")))
 	if method == "" {

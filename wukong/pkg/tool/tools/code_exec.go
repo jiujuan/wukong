@@ -24,6 +24,14 @@ func (t *CodeExecTool) Name() string { return "code_exec" }
 
 func (t *CodeExecTool) Description() string { return "执行代码片段" }
 
+func (t *CodeExecTool) ParameterSchema() []ParamSchema {
+	return []ParamSchema{
+		schemaItem("language", "string", true, "runtime language", nil, "python"),
+		schemaItem("lang", "string", false, "alias for language", nil, "python"),
+		schemaItem("code", "string", true, "source code to execute", nil, "print('hello')"),
+	}
+}
+
 func (t *CodeExecTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	language := strings.ToLower(strings.TrimSpace(readString(params, "language", "lang")))
 	code := readString(params, "code")

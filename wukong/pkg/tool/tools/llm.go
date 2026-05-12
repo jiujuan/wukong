@@ -22,6 +22,16 @@ func (t *LLMTool) Name() string { return "llm_chat" }
 
 func (t *LLMTool) Description() string { return "调用 LLM 进行对话推理" }
 
+func (t *LLMTool) ParameterSchema() []ParamSchema {
+	return []ParamSchema{
+		schemaItem("system", "string", false, "system prompt", nil, "You are a helpful assistant"),
+		schemaItem("messages", "array<object>", false, "prebuilt message list", nil, []map[string]any{
+			{"role": "user", "content": "hello"},
+		}),
+		schemaItem("prompt", "string", false, "fallback prompt content", nil, "hello"),
+	}
+}
+
 func (t *LLMTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	if t.provider == nil {
 		t.logger.Error("[Tool] llm_chat failed: provider is nil")

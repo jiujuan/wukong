@@ -25,6 +25,8 @@ func (t *testTool) Name() string { return t.name }
 
 func (t *testTool) Description() string { return t.description }
 
+func (t *testTool) ParameterSchema() []ParamSchema { return nil }
+
 func (t *testTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	return t.executeFn(ctx, params)
 }
@@ -36,6 +38,31 @@ func TestNewManagerRegistersBuiltins(t *testing.T) {
 		if _, ok := m.Get(name); !ok {
 			t.Fatalf("builtin tool %q not registered", name)
 		}
+	}
+
+	items := m.List()
+	var fileWriteSchema []ParamSchema
+	for _, item := range items {
+		if item.Name == "file_write" {
+			fileWriteSchema = item.Schema
+			break
+		}
+	}
+	if len(fileWriteSchema) == 0 {
+		t.Fatalf("file_write schema should not be empty")
+	}
+	hasPath := false
+	hasContent := false
+	for _, field := range fileWriteSchema {
+		switch field.Name {
+		case "path":
+			hasPath = true
+		case "content":
+			hasContent = true
+		}
+	}
+	if !hasPath || !hasContent {
+		t.Fatalf("file_write schema missing required fields: %#v", fileWriteSchema)
 	}
 }
 

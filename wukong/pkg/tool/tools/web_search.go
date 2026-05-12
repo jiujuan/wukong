@@ -26,6 +26,15 @@ func (t *WebSearchTool) Name() string { return "web_search" }
 
 func (t *WebSearchTool) Description() string { return "联网搜索并返回结构化结果" }
 
+func (t *WebSearchTool) ParameterSchema() []ParamSchema {
+	return []ParamSchema{
+		schemaItem("query", "string", true, "search query", nil, "golang"),
+		schemaItem("q", "string", false, "alias for query", nil, "golang"),
+		schemaItem("keyword", "string", false, "alias for query", nil, "golang"),
+		schemaItem("topic", "string", false, "alias for query", nil, "golang"),
+	}
+}
+
 func (t *WebSearchTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	query := readString(params, "query", "q", "keyword", "topic")
 	if strings.TrimSpace(query) == "" {

@@ -84,3 +84,24 @@ func TestResolvePathBlocksEscape(t *testing.T) {
 		t.Fatalf("expected escape path to fail")
 	}
 }
+
+func TestFileWriteToolParameterSchema(t *testing.T) {
+	tool := &FileWriteTool{}
+	schema := tool.ParameterSchema()
+	if len(schema) == 0 {
+		t.Fatalf("expected schema to be defined")
+	}
+	foundPath := false
+	foundContent := false
+	for _, field := range schema {
+		if field.Name == "path" {
+			foundPath = true
+		}
+		if field.Name == "content" {
+			foundContent = true
+		}
+	}
+	if !foundPath || !foundContent {
+		t.Fatalf("expected path/content fields in schema: %#v", schema)
+	}
+}

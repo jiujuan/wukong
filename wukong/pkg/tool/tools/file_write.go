@@ -25,6 +25,15 @@ func (t *FileWriteTool) Name() string { return "file_write" }
 
 func (t *FileWriteTool) Description() string { return "写入本地文件内容" }
 
+func (t *FileWriteTool) ParameterSchema() []ParamSchema {
+	return []ParamSchema{
+		schemaItem("path", "string", false, "output path, auto-generated when empty", nil, "reports/daily.md"),
+		schemaItem("content", "string", true, "content to write", nil, "hello world"),
+		schemaItem("append", "bool", false, "append instead of overwrite", false, false),
+		schemaItem("title", "string", false, "title used for auto-generated path", nil, "daily report"),
+	}
+}
+
 func (t *FileWriteTool) Execute(_ context.Context, params map[string]any) (map[string]any, error) {
 	path := readString(params, "path")
 	content := readString(params, "content")

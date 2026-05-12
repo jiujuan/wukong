@@ -22,6 +22,12 @@ func (t *FileReadTool) Name() string { return "file_read" }
 
 func (t *FileReadTool) Description() string { return "读取本地文件内容" }
 
+func (t *FileReadTool) ParameterSchema() []ParamSchema {
+	return []ParamSchema{
+		schemaItem("path", "string", true, "relative path within base directory", nil, "docs/readme.md"),
+	}
+}
+
 func (t *FileReadTool) Execute(_ context.Context, params map[string]any) (map[string]any, error) {
 	path := readString(params, "path")
 	if strings.TrimSpace(path) == "" {

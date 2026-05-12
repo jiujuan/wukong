@@ -6,6 +6,7 @@ import (
 	"github.com/jiujuan/wukong/internal/model"
 	"github.com/jiujuan/wukong/pkg/manager"
 	"github.com/jiujuan/wukong/pkg/memory"
+	"github.com/jiujuan/wukong/pkg/tool"
 )
 
 type ChatService interface {
@@ -31,7 +32,7 @@ type SkillService interface {
 }
 
 type ToolService interface {
-	ListTools(ctx context.Context) []map[string]string
+	ListTools(ctx context.Context) []tool.ToolInfo
 }
 
 type MemoryService interface {
