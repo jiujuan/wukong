@@ -4,78 +4,95 @@ import (
 	stdctx "context"
 	"fmt"
 	"strings"
-	"sync"
 
 	wkcontext "github.com/jiujuan/wukong/pkg/context"
 	"github.com/jiujuan/wukong/pkg/llm"
 	"github.com/jiujuan/wukong/pkg/prompt"
 )
 
-type SceneAssembler interface {
-	BuildPromptInput(req BuildRequest, bundle *wkcontext.ContextBundle) prompt.RenderInput
-	Assemble(req BuildRequest, bundle *wkcontext.ContextBundle, promptMessages []llm.Message) ([]llm.Message, error)
-}
-
 type Builder struct {
-	contextEngine   *wkcontext.Engine
-	promptEngine    *prompt.Engine
-	mu              sync.RWMutex
-	sceneTemplates  map[string]string
-	sceneAssemblers map[string]SceneAssembler
+	contextEngine *wkcontext.Engine
+	promptEngine  *prompt.Engine
+	registry      *Registry
 }
 
 func New(contextEngine *wkcontext.Engine, promptEngine *prompt.Engine) *Builder {
-	return &Builder{
-		contextEngine:   contextEngine,
-		promptEngine:    promptEngine,
-		sceneTemplates:  make(map[string]string),
-		sceneAssemblers: make(map[string]SceneAssembler),
+	return NewWithOptions(
+		WithContextEngine(contextEngine),
+		WithPromptEngine(promptEngine),
+	)
+}
+
+func NewWithOptions(opts ...Option) *Builder {
+	builder := &Builder{
+		registry: NewRegistry(),
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(builder)
+		}
+	}
+	if builder.registry == nil {
+		builder.registry = NewRegistry()
+	}
+	return builder
+}
+
+func (b *Builder) RegisterContextSource(source wkcontext.Source) error {
+	if b == nil || b.contextEngine == nil {
+		return ErrContextEngineNil
+	}
+	return b.contextEngine.RegisterSource(source)
+}
+
+func (b *Builder) RegisterContextPolicy(policy wkcontext.Policy) error {
+	if b == nil || b.contextEngine == nil {
+		return ErrContextEngineNil
+	}
+	return b.contextEngine.RegisterPolicy(policy)
+}
+
+func (b *Builder) RegisterScene(scene wkcontext.SceneConfig) error {
+	if b == nil || b.contextEngine == nil {
+		return ErrContextEngineNil
+	}
+	return b.contextEngine.RegisterScene(scene)
+}
+
+func (b *Builder) RegisterPromptTemplate(t *prompt.Template) error {
+	if b == nil || b.promptEngine == nil {
+		return ErrPromptEngineNil
+	}
+	return b.promptEngine.Register(t)
 }
 
 func (b *Builder) BindSceneTemplate(scene string, templateKey string) {
-	if b == nil {
+	if b == nil || b.registry == nil {
 		return
 	}
-	scene = strings.TrimSpace(scene)
-	templateKey = strings.TrimSpace(templateKey)
-	if scene == "" || templateKey == "" {
-		return
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.sceneTemplates[scene] = templateKey
+	b.registry.BindSceneTemplate(scene, templateKey)
 }
 
 func (b *Builder) ResolveTemplate(scene string) (string, bool) {
-	if b == nil {
+	if b == nil || b.registry == nil {
 		return "", false
 	}
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	key, ok := b.sceneTemplates[strings.TrimSpace(scene)]
-	return key, ok
+	return b.registry.ResolveTemplate(scene)
 }
 
 func (b *Builder) RegisterAssembler(scene string, assembler SceneAssembler) {
-	if b == nil || assembler == nil {
+	if b == nil || b.registry == nil {
 		return
 	}
-	scene = strings.TrimSpace(scene)
-	if scene == "" {
-		return
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.sceneAssemblers[scene] = assembler
+	b.registry.RegisterAssembler(scene, assembler)
 }
 
 func (b *Builder) BuildMessages(ctx stdctx.Context, req BuildRequest) (*BuildResult, error) {
 	if b == nil {
-		return nil, fmt.Errorf("prompt builder is nil")
+		return nil, ErrBuilderNil
 	}
 	if b.promptEngine == nil {
-		return nil, fmt.Errorf("prompt engine is nil")
+		return nil, ErrPromptEngineNil
 	}
 
 	scene := strings.TrimSpace(req.Scene)
@@ -83,14 +100,14 @@ func (b *Builder) BuildMessages(ctx stdctx.Context, req BuildRequest) (*BuildRes
 		scene = strings.TrimSpace(req.Context.Scene)
 	}
 	if scene == "" {
-		return nil, fmt.Errorf("build request scene is empty")
+		return nil, ErrSceneEmpty
 	}
 
 	templateKey := strings.TrimSpace(req.TemplateKey)
 	if templateKey == "" {
 		resolved, ok := b.ResolveTemplate(scene)
 		if !ok {
-			return nil, fmt.Errorf("template binding for scene %q not found", scene)
+			return nil, fmt.Errorf("%w: %s", ErrTemplateNotFound, scene)
 		}
 		templateKey = resolved
 	}
@@ -131,18 +148,29 @@ func (b *Builder) BuildMessages(ctx stdctx.Context, req BuildRequest) (*BuildRes
 		}
 	}
 
+	meta := map[string]any{}
+	for k, v := range req.Meta {
+		meta[k] = v
+	}
+	if bundle != nil && bundle.Meta != nil {
+		for k, v := range bundle.Meta {
+			meta[k] = v
+		}
+	}
+
 	return &BuildResult{
+		Scene:          scene,
+		TemplateKey:    templateKey,
 		Messages:       append([]llm.Message(nil), messages...),
 		ContextBundle:  bundle,
 		PromptMessages: append([]llm.Message(nil), promptMessages...),
+		Meta:           meta,
 	}, nil
 }
 
 func (b *Builder) getAssembler(scene string) SceneAssembler {
-	if b == nil {
+	if b == nil || b.registry == nil {
 		return nil
 	}
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.sceneAssemblers[strings.TrimSpace(scene)]
+	return b.registry.GetAssembler(scene)
 }
