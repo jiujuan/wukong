@@ -51,7 +51,7 @@ export function LoginPage() {
           <div className="rounded-2xl border border-white/15 bg-white/10 p-4 text-sm text-indigo-50 backdrop-blur">
             <div className="mb-2 flex items-center gap-2 font-medium">
               <Sparkles className="h-4 w-4" />
-              晴辰助手
+              悟空助手
             </div>
             <p className="leading-6 text-indigo-100">
               登录后即可进入浅色控制台，查看实时任务流和 Agent 执行过程。

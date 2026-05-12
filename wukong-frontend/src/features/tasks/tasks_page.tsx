@@ -319,77 +319,79 @@ export function TasksPage() {
           }
         />
         <Card className="min-h-0 flex-1 overflow-hidden">
-          <SectionTitle icon={ListTodo} title="Task List" description={`${listTotal} tasks`} />
-          <div className="min-h-0 overflow-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-zinc-100 bg-zinc-50 text-xs font-medium text-zinc-400">
-                  <th className="px-5 py-3 text-left">Task</th>
-                  <th className="px-5 py-3 text-left">Skill</th>
-                  <th className="px-5 py-3 text-left">Status</th>
-                  <th className="px-5 py-3 text-left">View</th>
-                </tr>
-              </thead>
-              <tbody>
-                {listLoading ? (
-                  <EmptyTable colSpan={4}>Loading tasks...</EmptyTable>
-                ) : pagedTasks.length === 0 ? (
-                  <EmptyTable colSpan={4}>No tasks yet. Submit one to get started.</EmptyTable>
-                ) : (
-                  pagedTasks.map((task) => (
-                    <tr key={task.taskId} className="border-b border-zinc-100 hover:bg-indigo-50/20">
-                      <td className="px-5 py-4">
-                        <button
-                          className="w-full text-left"
-                          onClick={() => navigate(`/tasks/${task.taskId}`)}
-                        >
-                          <div className="font-medium text-zinc-900">{task.title}</div>
-                          <div className="mt-1 text-xs text-zinc-400">{task.taskId}</div>
-                        </button>
-                      </td>
-                      <td className="px-5 py-4 text-zinc-600">{task.skillName ?? "-"}</td>
-                      <td className="px-5 py-4">
-                        <StatusPill status={task.status} />
-                      </td>
-                      <td className="px-5 py-4">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          className="h-8 gap-1 rounded-xl border-zinc-200 bg-zinc-100 px-3 text-zinc-700 shadow-none hover:bg-zinc-200"
-                          onClick={() => navigate(`/tasks/${task.taskId}`)}
-                        >
-                          View
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex items-center justify-between gap-3 border-t border-zinc-100 px-5 py-3 text-sm text-zinc-500">
-            <div>{renderPageSummary(listPage, listPageSize, listTotal)}</div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={listPage <= 1 || listLoading}
-                onClick={() => setListPage((prev) => Math.max(1, prev - 1))}
-              >
-                Prev
-              </Button>
-              <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs text-zinc-600">
-                {listPage} / {listPages}
+          <div className="flex h-full min-h-0 flex-col">
+            <SectionTitle icon={ListTodo} title="Task List" description={`${listTotal} tasks`} />
+            <div className="min-h-0 flex-1 overflow-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-100 bg-zinc-50 text-xs font-medium text-zinc-400">
+                    <th className="px-5 py-3 text-left">Task</th>
+                    <th className="px-5 py-3 text-left">Skill</th>
+                    <th className="px-5 py-3 text-left">Status</th>
+                    <th className="px-5 py-3 text-left">View</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listLoading ? (
+                    <EmptyTable colSpan={4}>Loading tasks...</EmptyTable>
+                  ) : pagedTasks.length === 0 ? (
+                    <EmptyTable colSpan={4}>No tasks yet. Submit one to get started.</EmptyTable>
+                  ) : (
+                    pagedTasks.map((task) => (
+                      <tr key={task.taskId} className="border-b border-zinc-100 hover:bg-indigo-50/20">
+                        <td className="px-5 py-4">
+                          <button
+                            className="w-full text-left"
+                            onClick={() => navigate(`/tasks/${task.taskId}`)}
+                          >
+                            <div className="font-medium text-zinc-900">{task.title}</div>
+                            <div className="mt-1 text-xs text-zinc-400">{task.taskId}</div>
+                          </button>
+                        </td>
+                        <td className="px-5 py-4 text-zinc-600">{task.skillName ?? "-"}</td>
+                        <td className="px-5 py-4">
+                          <StatusPill status={task.status} />
+                        </td>
+                        <td className="px-5 py-4">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="h-8 gap-1 rounded-xl border-zinc-200 bg-zinc-100 px-3 text-zinc-700 shadow-none hover:bg-zinc-200"
+                            onClick={() => navigate(`/tasks/${task.taskId}`)}
+                          >
+                            View
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-zinc-100 px-5 py-3 text-sm text-zinc-500">
+              <div>{renderPageSummary(listPage, listPageSize, listTotal)}</div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={listPage <= 1 || listLoading}
+                  onClick={() => setListPage((prev) => Math.max(1, prev - 1))}
+                >
+                  Prev
+                </Button>
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs text-zinc-600">
+                  {listPage} / {listPages}
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={listPage >= listPages || listLoading}
+                  onClick={() => setListPage((prev) => Math.min(listPages, prev + 1))}
+                >
+                  Next
+                </Button>
               </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={listPage >= listPages || listLoading}
-                onClick={() => setListPage((prev) => Math.min(listPages, prev + 1))}
-              >
-                Next
-              </Button>
             </div>
           </div>
         </Card>
