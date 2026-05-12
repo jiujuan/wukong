@@ -12,6 +12,7 @@ import (
 	"github.com/jiujuan/wukong/pkg/asyncdb"
 	pkglogger "github.com/jiujuan/wukong/pkg/logger"
 	"github.com/jiujuan/wukong/pkg/queue"
+	"github.com/jiujuan/wukong/pkg/skills"
 	"github.com/jiujuan/wukong/pkg/statemachine"
 	"github.com/jiujuan/wukong/pkg/uuid"
 	"github.com/jiujuan/wukong/pkg/worker"
@@ -127,6 +128,7 @@ type Manager struct {
 	asyncWriter    *asyncdb.Writer
 	logger         *pkglogger.Logger
 	planner        TaskPlanner
+	skillRegistry  *skills.Registry
 	ctx            context.Context
 	cancel         context.CancelFunc
 	running        bool
@@ -184,6 +186,10 @@ func (m *Manager) SetPlanner(planner TaskPlanner) {
 		return
 	}
 	m.planner = planner
+}
+
+func (m *Manager) SetSkillRegistry(registry *skills.Registry) {
+	m.skillRegistry = registry
 }
 
 // SetWorkerPool 替换 WorkerPool（必须在 Start 前调用；会自动注入 resultCb）
@@ -572,6 +578,41 @@ func (m *Manager) planTask(qTask *queue.Task) error {
 	m.logger.Info("[Manager] start task planning",
 		"task_id", taskData.TaskID, "planner", m.planner.Name(), "skill", taskData.SkillName)
 	m.publishTaskEvent(m.ctx, taskData.TaskID, "STATUS", fmt.Sprintf(`{"planner":"%s","phase":"start"}`, m.planner.Name()))
+	if skillItem, ok := m.thirdPartySkillForTask(taskData.SkillName); ok {
+		m.logger.Info("[Manager] third-party skill task detected",
+			"task_id", taskData.TaskID, "skill", skillItem.SkillName, "source_type", skillItem.Package.SourceType,
+			"entry", skillItem.Package.Entry)
+		mergedParams := make(map[string]any)
+		for k, v := range taskData.Params {
+			mergedParams[k] = v
+		}
+		mergedParams["skill_name"] = skillItem.SkillName
+		mergedParams["execution_type"] = "third_party_skill"
+		mergedParams["skill_source_type"] = string(skillItem.Package.SourceType)
+		mergedParams["skill_entry"] = skillItem.Package.Entry
+		mergedParams["skill_root"] = skillItem.Package.RootDir
+		defs := []SubTaskDef{{
+			SubTaskID: fmt.Sprintf("%s_step_1", taskData.TaskID),
+			TaskID:    taskData.TaskID,
+			Action:    skillItem.SkillName,
+			Params:    mergedParams,
+			DependsOn: nil,
+			Status:    statemachine.SubStatusPending,
+		}}
+		for _, def := range defs {
+			taskID := def.TaskID
+			if strings.TrimSpace(taskID) == "" {
+				taskID = taskData.TaskID
+			}
+			if _, err := m.createSubTask(m.ctx, def.SubTaskID, taskID, def.Action, def.DependsOn, def.Params); err != nil {
+				return fmt.Errorf("create third-party skill subtask %s: %w", def.SubTaskID, err)
+			}
+		}
+		m.logger.Info("[Manager] third-party skill task planned",
+			"task_id", qTask.TaskID, "skill", skillItem.SkillName, "subtask_count", len(defs))
+		m.publishTaskEvent(m.ctx, taskData.TaskID, "STATUS", fmt.Sprintf(`{"planner":"%s","phase":"done","subtasks":%d,"execution_type":"third_party_skill"}`, m.planner.Name(), len(defs)))
+		return nil
+	}
 	planCtx := WithPlanReporter(m.ctx, func(msgType string, content string) {
 		m.publishTaskEvent(m.ctx, taskData.TaskID, msgType, content)
 	})
@@ -908,6 +949,7 @@ func (m *Manager) aggregateResults(subtasks []*SubTask) map[string]any {
 	merged := make(map[string]any)
 	summary := make([]map[string]any, 0, len(subtasks))
 	actionCount := make(map[string]int)
+	var skillExecution map[string]any
 
 	for _, st := range subtasks {
 		if st.Status != statemachine.SubStatusSuccess {
@@ -929,6 +971,9 @@ func (m *Manager) aggregateResults(subtasks []*SubTask) map[string]any {
 
 		if st.Result != nil {
 			merged[key] = st.Result
+			if skillExecution == nil && isThirdPartySkillResult(st.Result) {
+				skillExecution = cloneResultMap(st.Result)
+			}
 		}
 
 		// 生成摘要条目
@@ -946,6 +991,13 @@ func (m *Manager) aggregateResults(subtasks []*SubTask) map[string]any {
 	merged["_summary"] = summary
 	merged["_completed_at"] = time.Now().Format(time.RFC3339)
 	merged["_subtask_count"] = len(subtasks)
+	if skillExecution != nil {
+		merged["_execution_type"] = "third_party_skill"
+		merged["_execution"] = skillExecution
+		if name, ok := skillExecution["skill_name"].(string); ok && strings.TrimSpace(name) != "" {
+			merged["_skill_name"] = name
+		}
+	}
 
 	return merged
 }
@@ -966,6 +1018,44 @@ func (m *Manager) findSubTaskByID(subTaskID string) *SubTask {
 		}
 	}
 	return nil
+}
+
+func (m *Manager) thirdPartySkillForTask(skillName string) (*skills.Skill, bool) {
+	if m == nil || m.skillRegistry == nil {
+		return nil, false
+	}
+	item, ok := m.skillRegistry.Get(skillName)
+	if !ok || item == nil {
+		return nil, false
+	}
+	if item.Package.SourceType == skills.SourceBuiltin {
+		return nil, false
+	}
+	if strings.TrimSpace(item.Execute) == "" {
+		return nil, false
+	}
+	return item, true
+}
+
+func isThirdPartySkillResult(result map[string]any) bool {
+	if len(result) == 0 {
+		return false
+	}
+	if v, ok := result["execution_type"].(string); ok && strings.EqualFold(strings.TrimSpace(v), "third_party_skill") {
+		return true
+	}
+	return false
+}
+
+func cloneResultMap(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return map[string]any{}
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 // findSubTask 在某个主任务的子任务列表中按 SubTaskID 查找

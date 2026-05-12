@@ -25,6 +25,19 @@ import type { StreamType, TaskStatus } from '@/types/domain'
 
 const streamFilters: StreamType[] = ['THINK', 'TOOL', 'CHUNK', 'STATUS', 'FINISH']
 type TraceItem = { status: string; reason?: string; seq: number }
+type SkillExecutionView = {
+  executionType: string
+  skillName: string
+  sourceType: string
+  entry: string
+  skillRoot: string
+  outputDir: string
+  stdout: string
+  stderr: string
+  output: string
+  exitCode: number | null
+  manifestPath: string
+}
 
 function getTraceDisplay(item: TraceItem, next?: TraceItem) {
   if (item.status === 'PLANNING' && next && next.status !== 'PLANNING') {
@@ -55,6 +68,7 @@ export function TasksPage() {
   const [taskSkill, setTaskSkill] = useState('')
   const [taskPriority, setTaskPriority] = useState(5)
   const [taskResult, setTaskResult] = useState<string>('')
+  const [taskExecution, setTaskExecution] = useState<SkillExecutionView | null>(null)
   const [statusTrace, setStatusTrace] = useState<TraceItem[]>([])
   const replayedTaskRef = useRef<Set<string>>(new Set())
 
@@ -168,6 +182,7 @@ export function TasksPage() {
             .then((detail) => {
               if (detail.task?.result) {
                 setTaskResult(formatTaskResult(detail.task.result))
+                setTaskExecution(extractSkillExecution(detail.task.result))
               }
             })
             .catch(() => {})
@@ -195,10 +210,13 @@ export function TasksPage() {
         })
         if (detail.task.result) {
           setTaskResult(formatTaskResult(detail.task.result))
+          setTaskExecution(extractSkillExecution(detail.task.result))
         } else if (detail.task.error) {
           setTaskResult(detail.task.error)
+          setTaskExecution(null)
         } else {
           setTaskResult('')
+          setTaskExecution(null)
         }
       }
       const mapLevel = new Map<string, number>()
@@ -258,6 +276,7 @@ export function TasksPage() {
       return
     }
     setTaskResult('')
+    setTaskExecution(null)
     setStatusTrace([])
     loadTaskDetail(selectedTaskId).catch((error: Error) => toast.error(error.message))
   }, [loadTaskDetail, selectedTaskId])
@@ -413,7 +432,6 @@ export function TasksPage() {
   }
   return (
     <div className="flex h-full flex-col gap-5">
-  return (
       <PageHeader
         title="任务详情"
         description={selectedTaskId ?? '未选择任务'}
@@ -533,6 +551,31 @@ export function TasksPage() {
               )}
             </div>
           </Card>
+
+          {taskExecution ? (
+            <Card className="overflow-hidden">
+              <SectionTitle
+                icon={TerminalSquare}
+                title="第三方 Skill 执行结果"
+                description={taskExecution.executionType}
+              />
+              <div className="space-y-4 border-t border-zinc-100 bg-zinc-50 p-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <MetaItem label="Skill" value={taskExecution.skillName} />
+                  <MetaItem label="Source" value={taskExecution.sourceType || 'unknown'} />
+                  <MetaItem label="Entry" value={taskExecution.entry || '-'} />
+                  <MetaItem label="Exit Code" value={taskExecution.exitCode ?? '-'} />
+                  <MetaItem label="Skill Root" value={taskExecution.skillRoot || '-'} />
+                  <MetaItem label="Output Dir" value={taskExecution.outputDir || '-'} />
+                  <MetaItem label="Manifest" value={taskExecution.manifestPath || '-'} className="md:col-span-2" />
+                </div>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <StreamPanel label="Stdout" value={taskExecution.stdout || taskExecution.output || '-'} />
+                  <StreamPanel label="Stderr" value={taskExecution.stderr || '-'} />
+                </div>
+              </div>
+            </Card>
+          ) : null}
 
           <Card className="overflow-hidden">
             <SectionTitle icon={TerminalSquare} title="最终结果" description="聚合后的任务输出" />
@@ -683,6 +726,34 @@ function EmptyTable({ colSpan, children }: { colSpan: number; children: ReactNod
   )
 }
 
+function MetaItem({
+  label,
+  value,
+  className,
+}: {
+  label: string
+  value: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={`rounded-xl border border-zinc-200 bg-white p-3 ${className ?? ''}`.trim()}>
+      <div className="text-xs uppercase tracking-wide text-zinc-400">{label}</div>
+      <div className="mt-1 break-all text-sm text-zinc-800">{value}</div>
+    </div>
+  )
+}
+
+function StreamPanel({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-3">
+      <div className="mb-2 text-xs uppercase tracking-wide text-zinc-400">{label}</div>
+      <div className="max-h-52 overflow-auto whitespace-pre-wrap break-words text-sm leading-6 text-zinc-700">
+        {value}
+      </div>
+    </div>
+  )
+}
+
 function TaskSheet({
   open,
   creating,
@@ -816,6 +887,104 @@ function formatTaskResult(result: unknown): string {
   } catch {
     return String(result ?? '')
   }
+}
+
+function extractSkillExecution(result: unknown): SkillExecutionView | null {
+  const candidate = findSkillExecutionCandidate(result)
+  if (!candidate) {
+    return null
+  }
+  const pkg = asRecord(candidate.package)
+  const skillName =
+    stringField(candidate, ['skill_name', 'skillName']) || stringField(pkg, ['package_name']) || ''
+  if (!skillName) {
+    return null
+  }
+  return {
+    executionType: stringField(candidate, ['execution_type', 'executionType', '_execution_type']) || 'third_party_skill',
+    skillName,
+    sourceType:
+      stringField(candidate, ['source_type', 'sourceType']) ||
+      stringField(pkg, ['source_type']) ||
+      '',
+    entry: stringField(candidate, ['entry']) || stringField(pkg, ['entry']) || '',
+    skillRoot: stringField(candidate, ['skill_root', 'skillRoot']) || stringField(pkg, ['root_dir']) || '',
+    outputDir: stringField(candidate, ['output_dir', 'outputDir']) || '',
+    stdout: stringField(candidate, ['stdout']) || '',
+    stderr: stringField(candidate, ['stderr']) || '',
+    output: stringField(candidate, ['output']) || '',
+    exitCode: numberField(candidate, ['exit_code', 'exitCode']),
+    manifestPath: stringField(pkg, ['manifest_path']) || '',
+  }
+}
+
+function findSkillExecutionCandidate(value: unknown): Record<string, unknown> | null {
+  const direct = pickExecutionRecord(value)
+  if (direct) {
+    return direct
+  }
+  if (value && typeof value === 'object') {
+    for (const nested of Object.values(value as Record<string, unknown>)) {
+      const candidate = pickExecutionRecord(nested)
+      if (candidate) {
+        return candidate
+      }
+    }
+  }
+  return null
+}
+
+function pickExecutionRecord(value: unknown): Record<string, unknown> | null {
+  const record = asRecord(value)
+  if (!record) {
+    return null
+  }
+  const nestedExecution = asRecord(record._execution)
+  if (nestedExecution) {
+    return nestedExecution
+  }
+  const executionType = stringField(record, ['execution_type', 'executionType', '_execution_type'])
+  if (executionType === 'third_party_skill') {
+    return record
+  }
+  const pkg = asRecord(record.package)
+  if (pkg && stringField(pkg, ['source_type']) && stringField(pkg, ['source_type']) !== 'builtin') {
+    return record
+  }
+  return null
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  return value as Record<string, unknown>
+}
+
+function stringField(record: Record<string, unknown> | null, keys: string[]): string {
+  if (!record) {
+    return ''
+  }
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+  return ''
+}
+
+function numberField(record: Record<string, unknown> | null, keys: string[]): number | null {
+  if (!record) {
+    return null
+  }
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value
+    }
+  }
+  return null
 }
 
 function extractReadableText(value: unknown): string | null {

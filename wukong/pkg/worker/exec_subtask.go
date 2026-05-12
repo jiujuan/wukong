@@ -193,7 +193,7 @@ func NewSubTaskExecutor(provider *llm.Provider, logger *slog.Logger, promptBuild
 	if promptBuilder == nil {
 		promptBuilder = NewActionPromptBuilder()
 	}
-	defaultExecutor := NewLLMActionExecutor(provider, promptBuilder)
+	defaultExecutor := NewSkillAwareActionExecutor(nil, nil, NewLLMActionExecutor(provider, promptBuilder))
 	actionExecutors := defaultActionExecutors(provider, nil)
 	return &SubTaskExecutor{
 		logger:          logger,
@@ -211,7 +211,7 @@ func NewSubTaskExecutorWithTools(provider *llm.Provider, logger *slog.Logger, pr
 		promptBuilder = NewActionPromptBuilderWithRegistry(skillRegistry)
 	}
 	reactExecutor := NewReActExecutor(provider, toolManager, skillRegistry, logger)
-	defaultExecutor := reactExecutor
+	defaultExecutor := NewSkillAwareActionExecutor(toolManager, skillRegistry, reactExecutor)
 	actionExecutors := defaultActionExecutors(provider, toolManager)
 	actionExecutors["web_search"] = reactExecutor
 	actionExecutors["report_gen"] = reactExecutor
@@ -453,21 +453,28 @@ func (e *SkillAwareActionExecutor) Execute(ctx context.Context, subTask executab
 	params := cloneParams(subTask.GetParams())
 	skillName := resolveSkillName(subTask.GetAction(), params)
 	toolName := resolveToolName(subTask.GetAction(), params)
+	if e.skillRegistry != nil && skillName != "" {
+		if item, ok := e.skillRegistry.Get(skillName); ok && strings.TrimSpace(item.Execute) != "" {
+			result, err := e.skillRegistry.ExecuteWithParams(ctx, skillName, params)
+			if err != nil {
+				return nil, err
+			}
+			if result == nil {
+				result = map[string]any{}
+			}
+			result["execution_type"] = "third_party_skill"
+			result["skill_name"] = skillName
+			result["source_type"] = string(item.Package.SourceType)
+			result["entry"] = item.Package.Entry
+			return result, nil
+		}
+	}
 	if e.toolManager != nil && skillName != "" && toolName != "" {
 		if _, ok := e.toolManager.Get(toolName); ok {
 			result, err := e.toolManager.ExecuteForSkill(ctx, skillName, toolName, params)
 			if err == nil {
 				result["skill_name"] = skillName
 				result["tool"] = toolName
-				return result, nil
-			}
-		}
-	}
-	if e.skillRegistry != nil && skillName != "" {
-		if item, ok := e.skillRegistry.Get(skillName); ok && strings.TrimSpace(item.Execute) != "" {
-			result, err := e.skillRegistry.ExecuteWithParams(ctx, skillName, params)
-			if err == nil {
-				result["skill_name"] = skillName
 				return result, nil
 			}
 		}

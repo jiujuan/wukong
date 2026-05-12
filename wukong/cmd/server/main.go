@@ -157,6 +157,7 @@ func main() {
 	mgr := manager.NewManager(taskRepo)
 	mgr.SetLogger(log.With())
 	mgr.SetStreamPublisher(streamService)
+	mgr.SetSkillRegistry(skillRegistry)
 	mgr.SetPlanner(manager.NewLLMPlannerWithRegistry(llmProvider, manager.NewTplPlanner(), skillRegistry))
 
 	log.Info("init worker pool...")

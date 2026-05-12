@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -455,5 +456,68 @@ func TestIntegrationFileSkillWritesOnlyUnderAllowedDirAndReturnsTaskResult(t *te
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "out of base dir") {
 		t.Fatalf("unexpected escape error: %v", err)
+	}
+}
+
+func TestSubTaskExecutorWithToolsRoutesThirdPartySkillByDefault(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "local", "echo_skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir failed: %v", err)
+	}
+	scriptName := "run.sh"
+	scriptBody := "#!/usr/bin/env bash\nprintf \"skill=%s\\n\" \"$SKILL_NAME\"\n"
+	if runtime.GOOS == "windows" {
+		scriptName = "run.ps1"
+		scriptBody = `Write-Output "skill=$env:SKILL_NAME"`
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, scriptName), []byte(scriptBody), 0o644); err != nil {
+		t.Fatalf("write script failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(strings.Join([]string{
+		"# Skill: echo_skill",
+		"## Description",
+		"third party skill",
+		"## Tools",
+		"- llm_chat",
+		"## Execute",
+		"- " + scriptName,
+	}, "\n")), 0o644); err != nil {
+		t.Fatalf("write skill file failed: %v", err)
+	}
+
+	registry := skills.New(skills.WithRootDir(root))
+	if err := registry.Start(context.Background()); err != nil {
+		t.Fatalf("start registry failed: %v", err)
+	}
+	defer registry.Stop()
+
+	executor := NewSubTaskExecutorWithTools(nil, nil, nil, tool.NewManager(), registry)
+	task := &queue.Task{
+		TaskID: "task-skill-1",
+		Data: &fakeSubTask{
+			subTaskID: "sub-skill-1",
+			taskID:    "task-skill-1",
+			action:    "echo_skill",
+			params:    map[string]any{"query": "golang"},
+		},
+	}
+
+	if err := executor.Handle(context.Background(), task); err != nil {
+		t.Fatalf("handle failed: %v", err)
+	}
+
+	sub := task.Data.(*fakeSubTask)
+	if sub.result == nil {
+		t.Fatal("result should be set")
+	}
+	if sub.result["execution_type"] != "third_party_skill" {
+		t.Fatalf("execution_type = %#v, want third_party_skill", sub.result["execution_type"])
+	}
+	if sub.result["skill_name"] != "echo_skill" {
+		t.Fatalf("skill_name = %#v, want echo_skill", sub.result["skill_name"])
+	}
+	if got := fmt.Sprint(sub.result["stdout"]); !strings.Contains(got, "skill=echo_skill") {
+		t.Fatalf("stdout = %q, want skill=echo_skill", got)
 	}
 }
