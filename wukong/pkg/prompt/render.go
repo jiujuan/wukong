@@ -12,6 +12,8 @@ import (
 
 var placeholderPattern = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}`)
 
+// Render renders the template with the given key and input,
+// returning the rendered messages or an error if any required variables are missing.
 func (e *Engine) Render(key string, input RenderInput) ([]llm.Message, error) {
 	t, ok := e.Get(key)
 	if !ok {

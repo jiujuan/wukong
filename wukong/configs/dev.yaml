@@ -42,4 +42,4 @@ worker:
 
 tool:
   file_write:
-    output_dir: "storage/output_data"
+    output_dir: "../storage/output_data"
