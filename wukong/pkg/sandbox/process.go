@@ -276,6 +276,10 @@ func withinAllowedRoots(path string, roots []string) bool {
 	return false
 }
 
+func WithinAllowedRoots(path string, roots []string) bool {
+	return withinAllowedRoots(path, roots)
+}
+
 func validateAllowedCommand(policy Policy, command string) error {
 	key := commandKey(command)
 	if key == "" {

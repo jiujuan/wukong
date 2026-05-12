@@ -6,15 +6,16 @@ import (
 )
 
 type Request struct {
-	Runtime    string            `json:"runtime"`
-	Command    string            `json:"command,omitempty"`
-	Args       []string          `json:"args,omitempty"`
-	ScriptPath string            `json:"script_path,omitempty"`
-	Code       string            `json:"code,omitempty"`
-	WorkDir    string            `json:"work_dir,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
-	Input      string            `json:"input,omitempty"`
-	Timeout    time.Duration     `json:"timeout,omitempty"`
+	Runtime          string            `json:"runtime"`
+	Command          string            `json:"command,omitempty"`
+	Args             []string          `json:"args,omitempty"`
+	ScriptPath       string            `json:"script_path,omitempty"`
+	Code             string            `json:"code,omitempty"`
+	WorkDir          string            `json:"work_dir,omitempty"`
+	AllowedWorkRoots []string          `json:"allowed_work_roots,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
+	Input            string            `json:"input,omitempty"`
+	Timeout          time.Duration     `json:"timeout,omitempty"`
 }
 
 type Result struct {

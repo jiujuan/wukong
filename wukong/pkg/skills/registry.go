@@ -11,6 +11,7 @@ import (
 
 type Registry struct {
 	rootDir      string
+	roots        []SkillRoot
 	pollInterval time.Duration
 	execTimeout  time.Duration
 	logger       *slog.Logger
@@ -32,6 +33,9 @@ func New(opts ...Option) *Registry {
 	}
 	for _, opt := range opts {
 		opt(r)
+	}
+	if len(r.roots) == 0 {
+		r.roots = defaultSkillRoots(r.rootDir)
 	}
 	for _, item := range defaultBuiltins() {
 		r.skills[item.SkillName] = cloneSkill(item)
@@ -87,7 +91,7 @@ func (r *Registry) List() []*Skill {
 func (r *Registry) Get(skillName string) (*Skill, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	item, ok := r.skills[strings.ToLower(strings.TrimSpace(skillName))]
+	item, ok := r.skills[normalizeSkillName(skillName)]
 	if !ok {
 		return nil, false
 	}

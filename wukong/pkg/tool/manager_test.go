@@ -13,6 +13,7 @@ import (
 
 	"github.com/jiujuan/wukong/pkg/llm"
 	"github.com/jiujuan/wukong/pkg/skills"
+	tooltools "github.com/jiujuan/wukong/pkg/tool/tools"
 )
 
 type testTool struct {
@@ -116,7 +117,7 @@ func TestManagerExecuteMissingTool(t *testing.T) {
 func TestManagerExecuteForSkillPolicy(t *testing.T) {
 	root := t.TempDir()
 	skillDir := filepath.Join(root, "report_gen")
-	if err := ensureSkillFile(skillDir, "report_gen", []string{"echo"}); err != nil {
+	if err := ensureSkillFile(skillDir, "report_gen", []string{"llm_chat"}); err != nil {
 		t.Fatalf("prepare skill file failed: %v", err)
 	}
 
@@ -128,19 +129,19 @@ func TestManagerExecuteForSkillPolicy(t *testing.T) {
 
 	m := NewManager(WithSkillsRegistry(registry))
 	m.Register(&testTool{
-		name:        "echo",
-		description: "echo tool",
+		name:        "llm_chat",
+		description: "llm tool",
 		executeFn: func(_ context.Context, params map[string]any) (map[string]any, error) {
-			return map[string]any{"echo": params["value"]}, nil
+			return map[string]any{"output": params["value"]}, nil
 		},
 	})
 
-	result, err := m.ExecuteForSkill(context.Background(), "report_gen", "echo", map[string]any{"value": "allowed"})
+	result, err := m.ExecuteForSkill(context.Background(), "report_gen", "llm_chat", map[string]any{"value": "allowed"})
 	if err != nil {
 		t.Fatalf("allowed tool execution failed: %v", err)
 	}
-	if got := result["echo"]; got != "allowed" {
-		t.Fatalf("echo = %v, want allowed", got)
+	if got := result["output"]; got != "allowed" {
+		t.Fatalf("output = %v, want allowed", got)
 	}
 
 	if _, err := m.ExecuteForSkill(context.Background(), "report_gen", "blocked", nil); err == nil {
@@ -148,7 +149,7 @@ func TestManagerExecuteForSkillPolicy(t *testing.T) {
 	}
 }
 
-func TestManagerExecuteForUnknownSkillBypassesPolicy(t *testing.T) {
+func TestManagerExecuteForUnknownSkillRejected(t *testing.T) {
 	m := NewManager(WithSkillsRegistry(skills.New()))
 	m.Register(&testTool{
 		name:        "echo",
@@ -158,12 +159,49 @@ func TestManagerExecuteForUnknownSkillBypassesPolicy(t *testing.T) {
 		},
 	})
 
-	result, err := m.ExecuteForSkill(context.Background(), "missing_skill", "echo", map[string]any{"value": "ok"})
-	if err != nil {
-		t.Fatalf("bypass execution failed: %v", err)
+	if _, err := m.ExecuteForSkill(context.Background(), "missing_skill", "echo", map[string]any{"value": "ok"}); err == nil {
+		t.Fatalf("expected unknown skill to be rejected")
 	}
-	if got := result["value"]; got != "ok" {
-		t.Fatalf("value = %v, want ok", got)
+}
+
+func TestManagerExecuteForSkillAppliesSkillContext(t *testing.T) {
+	root := t.TempDir()
+	output := t.TempDir()
+	skillDir := filepath.Join(root, "report_gen")
+	if err := ensureSkillFile(skillDir, "report_gen", []string{"file_write"}); err != nil {
+		t.Fatalf("prepare skill file failed: %v", err)
+	}
+
+	registry := skills.New(skills.WithRootDir(root))
+	if err := registry.Start(context.Background()); err != nil {
+		t.Fatalf("start skills registry failed: %v", err)
+	}
+	defer registry.Stop()
+
+	m := NewManager(
+		WithSkillsRegistry(registry),
+		WithFileWriteDir(output),
+	)
+	toolItem, ok := m.Get("file_write")
+	if !ok {
+		t.Fatalf("file_write tool not found")
+	}
+
+	ctx := tooltools.WithSkillContext(context.Background(), tooltools.SkillContext{
+		SkillName: "report_gen",
+		SkillRoot: skillDir,
+		OutputDir: filepath.Join(output, "report_gen"),
+	})
+	result, err := toolItem.Execute(ctx, map[string]any{
+		"path":    "reports/daily.md",
+		"content": "hello",
+	})
+	if err != nil {
+		t.Fatalf("file_write execute failed: %v", err)
+	}
+	want := filepath.Join(output, "report_gen", "reports", "daily.md")
+	if got := result["path"]; got != want {
+		t.Fatalf("path = %v, want %v", got, want)
 	}
 }
 

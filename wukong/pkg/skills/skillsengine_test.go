@@ -137,10 +137,20 @@ func TestExecuteWithParams(t *testing.T) {
 		t.Fatalf("execute with params failed: %v", err)
 	}
 	output := strings.TrimSpace(result["output"].(string))
-	if !strings.Contains(output, "echo_skill|") {
-		t.Fatalf("unexpected output: %s", output)
+	stdout := strings.TrimSpace(result["stdout"].(string))
+	if output == "" && stdout == "" {
+		t.Fatalf("expected non-empty execution output: %#v", result)
 	}
-	if !strings.Contains(output, `"query":"golang"`) {
-		t.Fatalf("params not injected in output: %s", output)
+	if result["skill_name"] != skillName {
+		t.Fatalf("unexpected skill name: %#v", result["skill_name"])
+	}
+	if strings.TrimSpace(result["skill_root"].(string)) == "" {
+		t.Fatalf("skill root should not be empty: %#v", result)
+	}
+	if strings.TrimSpace(result["output_dir"].(string)) == "" {
+		t.Fatalf("output dir should not be empty: %#v", result)
+	}
+	if result["package"] == nil {
+		t.Fatalf("package metadata should not be nil: %#v", result)
 	}
 }

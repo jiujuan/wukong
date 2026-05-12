@@ -135,11 +135,15 @@ func (s *Sandbox) Validate(req Request) error {
 			return fmt.Errorf("%w: %s", ErrCommandNotAllowed, command)
 		}
 	}
-	if len(s.policy.AllowedWorkRoots) > 0 {
-		if normalized.WorkDir != "" && !withinAllowedRoots(normalized.WorkDir, s.policy.AllowedWorkRoots) {
+	allowedRoots := normalized.AllowedWorkRoots
+	if len(allowedRoots) == 0 {
+		allowedRoots = s.policy.AllowedWorkRoots
+	}
+	if len(allowedRoots) > 0 {
+		if normalized.WorkDir != "" && !withinAllowedRoots(normalized.WorkDir, allowedRoots) {
 			return fmt.Errorf("%w: %s", ErrWorkDirNotAllowed, normalized.WorkDir)
 		}
-		if normalized.ScriptPath != "" && !withinAllowedRoots(normalized.ScriptPath, s.policy.AllowedWorkRoots) {
+		if normalized.ScriptPath != "" && !withinAllowedRoots(normalized.ScriptPath, allowedRoots) {
 			return fmt.Errorf("%w: %s", ErrWorkDirNotAllowed, normalized.ScriptPath)
 		}
 	}
@@ -173,6 +177,17 @@ func (s *Sandbox) normalizeRequest(req Request) (Request, error) {
 		if err != nil {
 			return Request{}, err
 		}
+	}
+	if len(req.AllowedWorkRoots) > 0 {
+		roots := make([]string, 0, len(req.AllowedWorkRoots))
+		for _, root := range req.AllowedWorkRoots {
+			abs, err := absPath(root)
+			if err != nil || strings.TrimSpace(abs) == "" {
+				continue
+			}
+			roots = append(roots, abs)
+		}
+		req.AllowedWorkRoots = roots
 	}
 	req.Env = filterAllowedEnv(req.Env, s.policy.AllowedEnvKeys)
 	if req.Args != nil {

@@ -36,7 +36,11 @@ func (t *MemoryReadTool) Execute(ctx context.Context, params map[string]any) (ma
 	}
 	namespace := readString(params, "namespace", "scope")
 	if strings.TrimSpace(namespace) == "" {
-		namespace = "default"
+		if skillCtx, ok := SkillContextFromContext(ctx); ok && strings.TrimSpace(skillCtx.SkillName) != "" {
+			namespace = skillCtx.SkillName
+		} else {
+			namespace = "default"
+		}
 	}
 	key := readString(params, "key")
 	if strings.TrimSpace(key) == "" {
@@ -88,7 +92,11 @@ func (t *MemoryWriteTool) Execute(ctx context.Context, params map[string]any) (m
 	}
 	namespace := readString(params, "namespace", "scope")
 	if strings.TrimSpace(namespace) == "" {
-		namespace = "default"
+		if skillCtx, ok := SkillContextFromContext(ctx); ok && strings.TrimSpace(skillCtx.SkillName) != "" {
+			namespace = skillCtx.SkillName
+		} else {
+			namespace = "default"
+		}
 	}
 	key := readString(params, "key")
 	if strings.TrimSpace(key) == "" {

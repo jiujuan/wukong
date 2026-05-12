@@ -28,14 +28,18 @@ func (t *FileReadTool) ParameterSchema() []ParamSchema {
 	}
 }
 
-func (t *FileReadTool) Execute(_ context.Context, params map[string]any) (map[string]any, error) {
+func (t *FileReadTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	path := readString(params, "path")
 	if strings.TrimSpace(path) == "" {
 		t.logger.Warn("[Tool] file_read invalid params: path is empty")
 		return nil, fmt.Errorf("path is required")
 	}
 	t.logger.Info("[Tool] file_read start", "path", path)
-	target, err := resolvePath(t.baseDir, path)
+	baseDir := t.baseDir
+	if skillCtx, ok := SkillContextFromContext(ctx); ok && strings.TrimSpace(skillCtx.SkillRoot) != "" {
+		baseDir = skillCtx.SkillRoot
+	}
+	target, err := resolvePath(baseDir, path)
 	if err != nil {
 		t.logger.Error("[Tool] file_read resolve path failed", "path", path, "error", err)
 		return nil, err

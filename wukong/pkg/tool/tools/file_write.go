@@ -34,7 +34,7 @@ func (t *FileWriteTool) ParameterSchema() []ParamSchema {
 	}
 }
 
-func (t *FileWriteTool) Execute(_ context.Context, params map[string]any) (map[string]any, error) {
+func (t *FileWriteTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	path := readString(params, "path")
 	content := readString(params, "content")
 	if t.now == nil {
@@ -48,7 +48,11 @@ func (t *FileWriteTool) Execute(_ context.Context, params map[string]any) (map[s
 		return nil, fmt.Errorf("path is required")
 	}
 	t.logger.Info("[Tool] file_write start", "path", path, "content_length", len(content))
-	target, err := resolvePath(t.baseDir, path)
+	baseDir := t.baseDir
+	if skillCtx, ok := SkillContextFromContext(ctx); ok && strings.TrimSpace(skillCtx.OutputDir) != "" {
+		baseDir = skillCtx.OutputDir
+	}
+	target, err := resolvePath(baseDir, path)
 	if err != nil {
 		t.logger.Error("[Tool] file_write resolve path failed", "path", path, "error", err)
 		return nil, err
