@@ -45,3 +45,5 @@ skills/
 !wukong/pkg/skills/**
 
 .codex
+
+storage/output_data/*

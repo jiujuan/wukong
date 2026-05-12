@@ -132,18 +132,19 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, sessionID, conten
 		if streamer, ok := s.llmProvider.(chatStreamer); ok {
 			streamedReply, chatErr := s.streamChatReply(ctx, sessionID, messages, streamer)
 			if chatErr != nil {
-				return nil, chatErr
-			}
-			if strings.TrimSpace(streamedReply) != "" {
+				if strings.TrimSpace(streamedReply) != "" {
+					reply = streamedReply
+					streamed = true
+				} else if resp, fallbackErr := s.llmProvider.Chat(ctx, messages); fallbackErr == nil && resp != nil && len(resp.Choices) > 0 {
+					reply = resp.Choices[0].Message.Content
+				}
+			} else if strings.TrimSpace(streamedReply) != "" {
 				reply = streamedReply
 				streamed = true
 			}
 		} else {
 			resp, chatErr := s.llmProvider.Chat(ctx, messages)
-			if chatErr != nil {
-				return nil, chatErr
-			}
-			if len(resp.Choices) > 0 {
+			if chatErr == nil && resp != nil && len(resp.Choices) > 0 {
 				reply = resp.Choices[0].Message.Content
 			}
 		}
