@@ -77,7 +77,7 @@ func TestFileWriteToolExecuteAutoPathFallsBackToAliasAndUntitled(t *testing.T) {
 		},
 		{
 			name:     "untitled",
-			params:   map[string]any{"content": "untitled body"},
+			params:   map[string]any{"content": ""},
 			wantName: "untitled-010203000004.md",
 		},
 	}
@@ -98,6 +98,24 @@ func TestFileWriteToolExecuteAutoPathFallsBackToAliasAndUntitled(t *testing.T) {
 				t.Fatalf("path = %q, want %q", gotPath, wantPath)
 			}
 		})
+	}
+}
+
+func TestFileWriteToolExecuteAutoPathUsesContentTitleWhenMissing(t *testing.T) {
+	root := t.TempDir()
+	tool := newTestFileWriteTool(root, time.Date(2026, 5, 12, 1, 2, 3, 4000, time.Local))
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"content": "# AI 市场分析报告\n\n正文内容",
+	})
+	if err != nil {
+		t.Fatalf("Execute() failed: %v", err)
+	}
+
+	gotPath := resultPath(t, result)
+	wantPath := filepath.Join(root, "20260512", "AI_市场分析报告-010203000004.md")
+	if gotPath != wantPath {
+		t.Fatalf("path = %q, want %q", gotPath, wantPath)
 	}
 }
 
