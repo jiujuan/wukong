@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
+
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type Sandbox struct {
@@ -158,21 +159,21 @@ func (s *Sandbox) normalizeRequest(req Request) (Request, error) {
 	if req.Timeout <= 0 {
 		req.Timeout = s.policy.DefaultTimeout
 	}
-	if strings.TrimSpace(req.WorkDir) == "" {
-		if strings.TrimSpace(req.ScriptPath) != "" {
+	if wkstr.Empty(req.WorkDir) {
+		if wkstr.NotEmpty(req.ScriptPath) {
 			req.WorkDir = filepathDir(req.ScriptPath)
 		} else if wd, err := currentWorkDir(); err == nil {
 			req.WorkDir = wd
 		}
 	}
 	var err error
-	if strings.TrimSpace(req.WorkDir) != "" {
+	if wkstr.NotEmpty(req.WorkDir) {
 		req.WorkDir, err = absPath(req.WorkDir)
 		if err != nil {
 			return Request{}, err
 		}
 	}
-	if strings.TrimSpace(req.ScriptPath) != "" {
+	if wkstr.NotEmpty(req.ScriptPath) {
 		req.ScriptPath, err = absPath(req.ScriptPath)
 		if err != nil {
 			return Request{}, err
@@ -182,7 +183,7 @@ func (s *Sandbox) normalizeRequest(req Request) (Request, error) {
 		roots := make([]string, 0, len(req.AllowedWorkRoots))
 		for _, root := range req.AllowedWorkRoots {
 			abs, err := absPath(root)
-			if err != nil || strings.TrimSpace(abs) == "" {
+			if err != nil || wkstr.Empty(abs) {
 				continue
 			}
 			roots = append(roots, abs)
@@ -203,6 +204,4 @@ func (s *Sandbox) getRunner(runtime string) Runner {
 	return s.runners[key]
 }
 
-func normalizeName(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
-}
+func normalizeName(value string) string { return wkstr.TrimLower(value) }

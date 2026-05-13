@@ -13,6 +13,7 @@ import (
 	"github.com/jiujuan/wukong/pkg/promptbuilder"
 	"github.com/jiujuan/wukong/pkg/queue"
 	"github.com/jiujuan/wukong/pkg/skills"
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 	"github.com/jiujuan/wukong/pkg/tool"
 )
 
@@ -83,7 +84,7 @@ func (b *ActionPromptBuilder) BuildMessages(ctx context.Context, subTask executa
 
 	// action 模板选择是“特例覆盖默认”的结构：
 	// 低风险 action 直接走专用模板，其余 action 仍可复用统一执行模板。
-	action := strings.ToLower(strings.TrimSpace(subTask.GetAction()))
+	action := wkstr.TrimLower(subTask.GetAction())
 	templateKey := prompt.TemplateWorkerActionDefault
 	if custom, ok := b.templateKey[action]; ok {
 		templateKey = custom
@@ -93,11 +94,11 @@ func (b *ActionPromptBuilder) BuildMessages(ctx context.Context, subTask executa
 	// 例如 search 可能叫 query/q/topic，report 可能叫 topic/title/subject。
 	// 找不到时回退到 params JSON 或默认主题，避免模板渲染缺参。
 	query := extractStringParam(subTask.GetParams(), "query", "keyword", "q", "topic")
-	if strings.TrimSpace(query) == "" {
+	if wkstr.Empty(query) {
 		query = string(paramsJSON)
 	}
 	topic := extractStringParam(subTask.GetParams(), "topic", "title", "subject", "query")
-	if strings.TrimSpace(topic) == "" {
+	if wkstr.Empty(topic) {
 		topic = "未指定主题"
 	}
 	result, err := b.builder.BuildMessages(ctx, promptbuilder.BuildRequest{
@@ -167,7 +168,7 @@ func (e *LLMActionExecutor) Execute(ctx context.Context, subTask executableSubTa
 	if resp == nil || len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("llm returned empty choices")
 	}
-	content := strings.TrimSpace(resp.Choices[0].Message.Content)
+	content := wkstr.Trim(resp.Choices[0].Message.Content)
 	return map[string]any{
 		"output":            content,
 		"model":             resp.Model,
@@ -233,7 +234,7 @@ func (e *SubTaskExecutor) Handle(ctx context.Context, task *queue.Task) error {
 	if !ok || subTask == nil {
 		return fmt.Errorf("invalid subtask payload for task_id=%s", task.TaskID)
 	}
-	action := strings.ToLower(strings.TrimSpace(subTask.GetAction()))
+	action := wkstr.TrimLower(subTask.GetAction())
 	executor := e.defaultExecutor
 	if routed, ok := e.actionExecutors[action]; ok {
 		executor = routed
@@ -269,7 +270,7 @@ func (e *SubTaskExecutor) Handle(ctx context.Context, task *queue.Task) error {
 // RegisterActionExecutor 允许在默认路由表之外追加或覆盖某个 action 的执行策略。
 // 这使得 worker 层可以在不改 Handle 主流程的情况下逐步扩展新的 action。
 func (e *SubTaskExecutor) RegisterActionExecutor(action string, executor ActionExecutor) {
-	key := strings.ToLower(strings.TrimSpace(action))
+	key := wkstr.TrimLower(action)
 	if key == "" || executor == nil {
 		return
 	}
@@ -314,12 +315,12 @@ func extractStringParam(params map[string]any, keys ...string) string {
 		}
 		switch value := v.(type) {
 		case string:
-			if strings.TrimSpace(value) != "" {
+			if wkstr.NotEmpty(value) {
 				return value
 			}
 		default:
 			s := fmt.Sprintf("%v", value)
-			if strings.TrimSpace(s) != "" {
+			if wkstr.NotEmpty(s) {
 				return s
 			}
 		}
@@ -365,8 +366,8 @@ type ToolActionExecutor struct {
 func NewToolActionExecutor(toolManager *tool.Manager, skillName, toolName string) *ToolActionExecutor {
 	return &ToolActionExecutor{
 		toolManager: toolManager,
-		skillName:   strings.ToLower(strings.TrimSpace(skillName)),
-		toolName:    strings.ToLower(strings.TrimSpace(toolName)),
+		skillName:   wkstr.TrimLower(skillName),
+		toolName:    wkstr.TrimLower(toolName),
 	}
 }
 
@@ -381,9 +382,9 @@ func (e *ToolActionExecutor) Execute(ctx context.Context, subTask executableSubT
 	if params == nil {
 		params = map[string]any{}
 	}
-	if _, ok := params["query"]; !ok && strings.EqualFold(e.toolName, "web_search") {
+	if _, ok := params["query"]; !ok && wkstr.EqFold(e.toolName, "web_search") {
 		promptValue := extractStringParam(params, "prompt", "topic", "title")
-		if strings.TrimSpace(promptValue) != "" {
+		if wkstr.NotEmpty(promptValue) {
 			params["query"] = promptValue
 		}
 	}
@@ -454,7 +455,7 @@ func (e *SkillAwareActionExecutor) Execute(ctx context.Context, subTask executab
 	skillName := resolveSkillName(subTask.GetAction(), params)
 	toolName := resolveToolName(subTask.GetAction(), params)
 	if e.skillRegistry != nil && skillName != "" {
-		if item, ok := e.skillRegistry.Get(skillName); ok && strings.TrimSpace(item.Execute) != "" {
+		if item, ok := e.skillRegistry.Get(skillName); ok && wkstr.NotEmpty(item.Execute) {
 			result, err := e.skillRegistry.ExecuteWithParams(ctx, skillName, params)
 			if err != nil {
 				return nil, err
@@ -490,17 +491,17 @@ func (e *SkillAwareActionExecutor) Execute(ctx context.Context, subTask executab
 // 它们的目标不是“绝对正确地理解业务语义”，而是给执行器一个稳定的默认路由依据，
 // 让不同来源的 action / params 能收敛到较少的 skill/tool 名称上。
 func resolveSkillName(action string, params map[string]any) string {
-	if name := extractStringParam(params, "skill_name", "skill", "skillName"); strings.TrimSpace(name) != "" {
-		return strings.ToLower(strings.TrimSpace(name))
+	if name := extractStringParam(params, "skill_name", "skill", "skillName"); wkstr.NotEmpty(name) {
+		return wkstr.TrimLower(name)
 	}
-	return strings.ToLower(strings.TrimSpace(action))
+	return wkstr.TrimLower(action)
 }
 
 func resolveToolName(action string, params map[string]any) string {
-	if name := extractStringParam(params, "tool_name", "tool", "toolName"); strings.TrimSpace(name) != "" {
-		return strings.ToLower(strings.TrimSpace(name))
+	if name := extractStringParam(params, "tool_name", "tool", "toolName"); wkstr.NotEmpty(name) {
+		return wkstr.TrimLower(name)
 	}
-	a := strings.ToLower(strings.TrimSpace(action))
+	a := wkstr.TrimLower(action)
 	switch a {
 	case "report_gen":
 		return "llm_chat"

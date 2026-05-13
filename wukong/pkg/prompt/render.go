@@ -5,9 +5,9 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
-	"strings"
 
 	"github.com/jiujuan/wukong/pkg/llm"
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 var placeholderPattern = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}`)
@@ -17,7 +17,7 @@ var placeholderPattern = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}`)
 func (e *Engine) Render(key string, input RenderInput) ([]llm.Message, error) {
 	t, ok := e.Get(key)
 	if !ok {
-		return nil, fmt.Errorf("template %q not found", strings.TrimSpace(key))
+		return nil, fmt.Errorf("template %q not found", wkstr.Trim(key))
 	}
 	vars := buildRenderVars(input)
 	out := make([]llm.Message, 0, len(t.Messages))
@@ -28,7 +28,7 @@ func (e *Engine) Render(key string, input RenderInput) ([]llm.Message, error) {
 			missingSet[name] = struct{}{}
 		}
 		out = append(out, llm.Message{
-			Role:    strings.TrimSpace(item.Role),
+			Role:    wkstr.Trim(item.Role),
 			Content: content,
 		})
 	}
@@ -49,7 +49,7 @@ func (e *Engine) Render(key string, input RenderInput) ([]llm.Message, error) {
 func buildRenderVars(input RenderInput) map[string]string {
 	vars := make(map[string]string)
 	for k, v := range input.Variables {
-		key := strings.TrimSpace(k)
+		key := wkstr.Trim(k)
 		if key == "" {
 			continue
 		}
@@ -69,7 +69,7 @@ func addContextVars(vars map[string]string, contextValue any) {
 		vars["context_text"] = v
 	case map[string]string:
 		for key, value := range v {
-			key = strings.TrimSpace(key)
+			key = wkstr.Trim(key)
 			if key == "" {
 				continue
 			}
@@ -77,7 +77,7 @@ func addContextVars(vars map[string]string, contextValue any) {
 		}
 	case map[string]any:
 		for key, value := range v {
-			key = strings.TrimSpace(key)
+			key = wkstr.Trim(key)
 			if key == "" {
 				continue
 			}
@@ -88,7 +88,7 @@ func addContextVars(vars map[string]string, contextValue any) {
 		if rv.Kind() == reflect.Map {
 			iter := rv.MapRange()
 			for iter.Next() {
-				key := strings.TrimSpace(fmt.Sprint(iter.Key().Interface()))
+				key := wkstr.Trim(fmt.Sprint(iter.Key().Interface()))
 				if key == "" {
 					continue
 				}
@@ -112,7 +112,7 @@ func renderText(raw string, vars map[string]string) (string, []string) {
 		if len(sub) < 2 {
 			return match
 		}
-		key := strings.TrimSpace(sub[1])
+		key := wkstr.Trim(sub[1])
 		value, ok := vars[key]
 		if !ok {
 			missingSet[key] = struct{}{}

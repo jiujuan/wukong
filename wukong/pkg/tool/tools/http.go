@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pkglogger "github.com/jiujuan/wukong/pkg/logger"
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type HTTPTool struct {
@@ -35,12 +36,12 @@ func (t *HTTPTool) ParameterSchema() []ParamSchema {
 }
 
 func (t *HTTPTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
-	method := strings.ToUpper(strings.TrimSpace(readString(params, "method")))
+	method := wkstr.S(readString(params, "method")).Trim().Upper().Val()
 	if method == "" {
 		method = "GET"
 	}
 	rawURL := readString(params, "url")
-	if strings.TrimSpace(rawURL) == "" {
+	if wkstr.Empty(rawURL) {
 		t.logger.Warn("[Tool] http_request invalid params: url is empty")
 		return nil, fmt.Errorf("url is required")
 	}

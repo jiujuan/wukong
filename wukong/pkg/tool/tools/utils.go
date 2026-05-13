@@ -2,7 +2,8 @@ package tools
 
 import (
 	"fmt"
-	"strings"
+
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 func readString(source map[string]any, keys ...string) string {
@@ -16,12 +17,12 @@ func readString(source map[string]any, keys ...string) string {
 		}
 		switch value := v.(type) {
 		case string:
-			if strings.TrimSpace(value) != "" {
+			if wkstr.NotEmpty(value) {
 				return value
 			}
 		default:
 			text := fmt.Sprintf("%v", value)
-			if strings.TrimSpace(text) != "" {
+			if wkstr.NotEmpty(text) {
 				return text
 			}
 		}

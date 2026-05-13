@@ -3,7 +3,8 @@ package tools
 import (
 	"context"
 	"path/filepath"
-	"strings"
+
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type skillContextKey struct{}
@@ -29,21 +30,21 @@ func SkillContextFromContext(ctx context.Context) (SkillContext, bool) {
 		return SkillContext{}, false
 	}
 	item, ok := ctx.Value(skillContextKey{}).(SkillContext)
-	return item, ok && strings.TrimSpace(item.SkillName) != ""
+	return item, ok && wkstr.NotEmpty(item.SkillName)
 }
 
 func normalizeSkillContext(info SkillContext) SkillContext {
-	info.SkillName = strings.ToLower(strings.TrimSpace(info.SkillName))
+	info.SkillName = wkstr.TrimLower(info.SkillName)
 	info.SkillRoot = cleanPath(info.SkillRoot)
 	info.OutputDir = cleanPath(info.OutputDir)
-	info.Version = strings.TrimSpace(info.Version)
-	info.SourceType = strings.TrimSpace(info.SourceType)
-	info.PackageName = strings.TrimSpace(info.PackageName)
+	info.Version = wkstr.Trim(info.Version)
+	info.SourceType = wkstr.Trim(info.SourceType)
+	info.PackageName = wkstr.Trim(info.PackageName)
 	return info
 }
 
 func cleanPath(value string) string {
-	value = strings.TrimSpace(value)
+	value = wkstr.Trim(value)
 	if value == "" {
 		return ""
 	}

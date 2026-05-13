@@ -4,16 +4,18 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 func CleanPath(path string) string {
-	return filepath.Clean(strings.TrimSpace(path))
+	return filepath.Clean(wkstr.Trim(path))
 }
 
 func Join(parts ...string) string {
 	cleaned := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if strings.TrimSpace(part) == "" {
+		if wkstr.Empty(part) {
 			continue
 		}
 		cleaned = append(cleaned, part)
@@ -25,7 +27,7 @@ func Join(parts ...string) string {
 }
 
 func AbsPath(path string) (string, error) {
-	path = strings.TrimSpace(path)
+	path = wkstr.Trim(path)
 	if path == "" {
 		return "", fmt.Errorf("path is empty")
 	}
@@ -36,7 +38,7 @@ func (o *Operator) Exists(path string) (bool, error) {
 	if err := o.ensureReady(); err != nil {
 		return false, err
 	}
-	path = strings.TrimSpace(path)
+	path = wkstr.Trim(path)
 	if path == "" {
 		return false, nil
 	}
@@ -79,7 +81,7 @@ func (o *Operator) EnsureDir(dir string) error {
 	if err := o.ensureReady(); err != nil {
 		return err
 	}
-	dir = strings.TrimSpace(dir)
+	dir = wkstr.Trim(dir)
 	if dir == "" {
 		return fmt.Errorf("dir is empty")
 	}
@@ -90,7 +92,7 @@ func (o *Operator) EnsureParent(path string) error {
 	if err := o.ensureReady(); err != nil {
 		return err
 	}
-	path = strings.TrimSpace(path)
+	path = wkstr.Trim(path)
 	if path == "" {
 		return fmt.Errorf("path is empty")
 	}

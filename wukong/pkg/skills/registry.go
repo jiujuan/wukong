@@ -6,9 +6,10 @@ import (
 	"log/slog"
 	"os"
 	"sort"
-	"strings"
 	"sync"
 	"time"
+
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type Registry struct {
@@ -109,9 +110,9 @@ func (r *Registry) CanUseTool(skillName, tool string) bool {
 	if !ok {
 		return false
 	}
-	target := strings.ToLower(strings.TrimSpace(tool))
+	target := wkstr.TrimLower(tool)
 	for _, allowed := range item.Tools {
-		if strings.ToLower(strings.TrimSpace(allowed)) == target {
+		if wkstr.TrimLower(allowed) == target {
 			return true
 		}
 	}

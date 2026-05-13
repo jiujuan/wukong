@@ -3,9 +3,9 @@ package skills
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/jiujuan/wukong/pkg/sandbox"
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 var allowedSkillRuntimes = map[string]struct{}{
@@ -40,40 +40,32 @@ var allowedSkillTools = map[string]struct{}{
 }
 
 func skillPackageRoot(skillFile string) string {
-	if strings.TrimSpace(skillFile) == "" {
+	if wkstr.Empty(skillFile) {
 		return ""
 	}
 	return filepath.Clean(filepath.Dir(skillFile))
 }
 
 func normalizeSkillName(name string) string {
-	name = strings.TrimSpace(name)
+	name = wkstr.S(name).Trim().Lower().Replace(" ", "_").Replace("/", "_").Replace("\\", "_").Replace("@", "").Replace(":", "_").Val()
 	if name == "" {
 		return ""
 	}
-	name = strings.ToLower(name)
-	replacer := strings.NewReplacer(
-		" ", "_",
-		"/", "_",
-		"\\", "_",
-		"@", "",
-		":", "_",
-	)
-	return replacer.Replace(name)
+	return name
 }
 
 func validateSkillPackage(root string, item *Skill) error {
 	if item == nil {
 		return fmt.Errorf("skill is nil")
 	}
-	if strings.TrimSpace(root) == "" {
+	if wkstr.Empty(root) {
 		return fmt.Errorf("skill root is empty")
 	}
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(item.SourcePath) == "" {
+	if wkstr.Empty(item.SourcePath) {
 		return fmt.Errorf("skill source path is empty")
 	}
 	skillAbs, err := filepath.Abs(item.SourcePath)
@@ -83,7 +75,7 @@ func validateSkillPackage(root string, item *Skill) error {
 	if !sandbox.WithinAllowedRoots(skillAbs, []string{rootAbs}) {
 		return fmt.Errorf("skill source path is outside root: %s", skillAbs)
 	}
-	if strings.TrimSpace(item.Execute) != "" {
+	if wkstr.NotEmpty(item.Execute) {
 		entry := item.Execute
 		if !filepath.IsAbs(entry) {
 			entry = filepath.Join(rootAbs, entry)
@@ -106,9 +98,9 @@ func validateSkillPackage(root string, item *Skill) error {
 }
 
 func validateSkillRuntime(runtimeValue, execute string) error {
-	runtimeValue = strings.ToLower(strings.TrimSpace(runtimeValue))
+	runtimeValue = wkstr.TrimLower(runtimeValue)
 	if runtimeValue == "" {
-		if strings.TrimSpace(execute) == "" {
+		if wkstr.Empty(execute) {
 			return nil
 		}
 		return fmt.Errorf("skill runtime is empty")
@@ -121,7 +113,7 @@ func validateSkillRuntime(runtimeValue, execute string) error {
 
 func validateSkillTools(tools []string) error {
 	for _, toolName := range tools {
-		normalized := strings.ToLower(strings.TrimSpace(toolName))
+		normalized := wkstr.TrimLower(toolName)
 		if normalized == "" {
 			continue
 		}

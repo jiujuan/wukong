@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 	"github.com/jiujuan/wukong/pkg/uuid"
 )
 
@@ -25,8 +26,8 @@ func (s *LongMemoryStore) Create(userID string, skillName string, topic string, 
 	item := &LongTermMemory{
 		MemoryID:     "mem_" + uuid.NewShort(),
 		UserID:       userID,
-		SkillName:    strings.ToLower(strings.TrimSpace(skillName)),
-		Topic:        strings.TrimSpace(topic),
+		SkillName:    wkstr.TrimLower(skillName),
+		Topic:        wkstr.Trim(topic),
 		Content:      content,
 		SourceTaskID: sourceTaskID,
 		CreatedAt:    now,
@@ -64,9 +65,9 @@ func (s *LongMemoryStore) Search(userID string, skillName string, keyword string
 		limit = 20
 	}
 	result := make([]*LongTermMemory, 0, limit)
-	userID = strings.TrimSpace(userID)
-	skillName = strings.ToLower(strings.TrimSpace(skillName))
-	keyword = strings.ToLower(strings.TrimSpace(keyword))
+	userID = wkstr.Trim(userID)
+	skillName = wkstr.TrimLower(skillName)
+	keyword = wkstr.TrimLower(keyword)
 	for _, item := range s.items {
 		if userID != "" && item.UserID != userID {
 			continue
@@ -94,9 +95,9 @@ func (s *LongMemoryStore) List(userID string, skillName string, keyword string, 
 	if limit <= 0 {
 		limit = 20
 	}
-	userID = strings.TrimSpace(userID)
-	skillName = strings.ToLower(strings.TrimSpace(skillName))
-	keyword = strings.ToLower(strings.TrimSpace(keyword))
+	userID = wkstr.Trim(userID)
+	skillName = wkstr.TrimLower(skillName)
+	keyword = wkstr.TrimLower(keyword)
 	result := make([]*LongTermMemory, 0, len(s.items))
 	for _, item := range s.items {
 		if userID != "" && item.UserID != userID {

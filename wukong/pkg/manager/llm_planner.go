@@ -12,6 +12,7 @@ import (
 	"github.com/jiujuan/wukong/pkg/promptbuilder"
 	"github.com/jiujuan/wukong/pkg/skills"
 	"github.com/jiujuan/wukong/pkg/statemachine"
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type LLMPlanner struct {
@@ -111,7 +112,7 @@ func (p *LLMPlanner) planByLLM(ctx context.Context, task *Task) (*llmPlanPayload
 	if err := json.Unmarshal([]byte(content), plan); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(plan.Thought) != "" {
+	if wkstr.NotEmpty(plan.Thought) {
 		reportPlan(ctx, "THINK", plan.Thought)
 	}
 	return plan, nil
@@ -123,7 +124,7 @@ func (p *LLMPlanner) convert(ctx context.Context, task *Task, payload *llmPlanPa
 	}
 	idToSubID := make(map[string]string, len(payload.Steps))
 	for i, step := range payload.Steps {
-		rawID := strings.TrimSpace(step.ID)
+		rawID := wkstr.Trim(step.ID)
 		if rawID == "" {
 			rawID = fmt.Sprintf("s%d", i+1)
 		}
@@ -132,11 +133,11 @@ func (p *LLMPlanner) convert(ctx context.Context, task *Task, payload *llmPlanPa
 
 	defs := make([]SubTaskDef, 0, len(payload.Steps))
 	for i, step := range payload.Steps {
-		rawID := strings.TrimSpace(step.ID)
+		rawID := wkstr.Trim(step.ID)
 		if rawID == "" {
 			rawID = fmt.Sprintf("s%d", i+1)
 		}
-		action := strings.ToLower(strings.TrimSpace(step.Action))
+		action := wkstr.TrimLower(step.Action)
 		if action == "" {
 			return nil, fmt.Errorf("step[%d] action empty", i)
 		}
@@ -149,14 +150,14 @@ func (p *LLMPlanner) convert(ctx context.Context, task *Task, payload *llmPlanPa
 		}
 		params["skill_name"] = task.SkillName
 		params["action"] = action
-		if strings.TrimSpace(step.Thought) != "" {
-			params["plan_thought"] = strings.TrimSpace(step.Thought)
-			reportPlan(ctx, "THINK", fmt.Sprintf("步骤%s：%s", rawID, strings.TrimSpace(step.Thought)))
+		if wkstr.NotEmpty(step.Thought) {
+			params["plan_thought"] = wkstr.Trim(step.Thought)
+			reportPlan(ctx, "THINK", fmt.Sprintf("步骤%s：%s", rawID, wkstr.Trim(step.Thought)))
 		}
 
 		dependsOn := make([]string, 0, len(step.DependsOn))
 		for _, dep := range step.DependsOn {
-			d := strings.TrimSpace(dep)
+			d := wkstr.Trim(dep)
 			if d == "" {
 				continue
 			}
@@ -179,9 +180,9 @@ func (p *LLMPlanner) convert(ctx context.Context, task *Task, payload *llmPlanPa
 }
 
 func sanitizeJSON(raw string) string {
-	text := strings.TrimSpace(raw)
+	text := wkstr.Trim(raw)
 	text = strings.TrimPrefix(text, "```json")
 	text = strings.TrimPrefix(text, "```")
 	text = strings.TrimSuffix(text, "```")
-	return strings.TrimSpace(text)
+	return wkstr.Trim(text)
 }

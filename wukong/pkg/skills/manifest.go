@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/jiujuan/wukong/pkg/sandbox"
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type PackageManifest struct {
@@ -43,11 +43,11 @@ func loadPackageManifest(dir string) (PackageManifest, string, error) {
 		return PackageManifest{}, "", fmt.Errorf("parse manifest %s: %w", manifestPath, err)
 	}
 	manifest.Tools = normalizeStringSlice(append(manifest.Tools, manifest.Permissions.Tools...))
-	manifest.PackageName = strings.TrimSpace(manifest.PackageName)
-	manifest.Version = strings.TrimSpace(manifest.Version)
-	manifest.Homepage = strings.TrimSpace(manifest.Homepage)
-	manifest.Runtime = strings.TrimSpace(manifest.Runtime)
-	manifest.Entry = strings.TrimSpace(manifest.Entry)
+	manifest.PackageName = wkstr.Trim(manifest.PackageName)
+	manifest.Version = wkstr.Trim(manifest.Version)
+	manifest.Homepage = wkstr.Trim(manifest.Homepage)
+	manifest.Runtime = wkstr.Trim(manifest.Runtime)
+	manifest.Entry = wkstr.Trim(manifest.Entry)
 	return manifest, manifestPath, nil
 }
 
@@ -58,7 +58,7 @@ func normalizeStringSlice(items []string) []string {
 	seen := make(map[string]struct{}, len(items))
 	result := make([]string, 0, len(items))
 	for _, item := range items {
-		key := strings.ToLower(strings.TrimSpace(item))
+		key := wkstr.TrimLower(item)
 		if key == "" {
 			continue
 		}
@@ -72,7 +72,7 @@ func normalizeStringSlice(items []string) []string {
 }
 
 func resolveSkillResources(rootDir string) ([]string, []string, map[string]any, error) {
-	rootAbs, err := filepath.Abs(strings.TrimSpace(rootDir))
+	rootAbs, err := filepath.Abs(wkstr.Trim(rootDir))
 	if err != nil {
 		return nil, nil, nil, err
 	}

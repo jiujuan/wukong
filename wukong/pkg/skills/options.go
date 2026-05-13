@@ -3,15 +3,16 @@ package skills
 import (
 	"log/slog"
 	"path/filepath"
-	"strings"
 	"time"
+
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type Option func(*Registry)
 
 func WithRootDir(rootDir string) Option {
 	return func(r *Registry) {
-		if strings.TrimSpace(rootDir) != "" {
+		if wkstr.NotEmpty(rootDir) {
 			r.rootDir = rootDir
 			if len(r.roots) == 0 {
 				r.roots = defaultSkillRoots(rootDir)
@@ -24,7 +25,7 @@ func WithSkillRoots(roots ...SkillRoot) Option {
 	return func(r *Registry) {
 		cleaned := make([]SkillRoot, 0, len(roots))
 		for _, root := range roots {
-			dir := strings.TrimSpace(root.Dir)
+			dir := wkstr.Trim(root.Dir)
 			if dir == "" {
 				continue
 			}
@@ -70,7 +71,7 @@ func WithMetaStore(store MetaStore) Option {
 }
 
 func defaultSkillRoots(rootDir string) []SkillRoot {
-	rootDir = strings.TrimSpace(rootDir)
+	rootDir = wkstr.Trim(rootDir)
 	if rootDir == "" {
 		rootDir = "skills"
 	}
@@ -82,7 +83,7 @@ func defaultSkillRoots(rootDir string) []SkillRoot {
 }
 
 func normalizeSourceType(value SourceType) SourceType {
-	switch strings.ToLower(strings.TrimSpace(string(value))) {
+	switch wkstr.TrimLower(string(value)) {
 	case string(SourceBuiltin):
 		return SourceBuiltin
 	case string(SourceLocal):

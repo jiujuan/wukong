@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	pkglogger "github.com/jiujuan/wukong/pkg/logger"
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type FileReadTool struct {
@@ -30,13 +30,13 @@ func (t *FileReadTool) ParameterSchema() []ParamSchema {
 
 func (t *FileReadTool) Execute(ctx context.Context, params map[string]any) (map[string]any, error) {
 	path := readString(params, "path")
-	if strings.TrimSpace(path) == "" {
+	if wkstr.Empty(path) {
 		t.logger.Warn("[Tool] file_read invalid params: path is empty")
 		return nil, fmt.Errorf("path is required")
 	}
 	t.logger.Info("[Tool] file_read start", "path", path)
 	baseDir := t.baseDir
-	if skillCtx, ok := SkillContextFromContext(ctx); ok && strings.TrimSpace(skillCtx.SkillRoot) != "" {
+	if skillCtx, ok := SkillContextFromContext(ctx); ok && wkstr.NotEmpty(skillCtx.SkillRoot) {
 		baseDir = skillCtx.SkillRoot
 	}
 	target, err := resolvePath(baseDir, path)

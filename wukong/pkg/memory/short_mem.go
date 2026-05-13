@@ -2,9 +2,10 @@ package memory
 
 import (
 	"sort"
-	"strings"
 	"sync"
 	"time"
+
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type ShortMemoryStore struct {
@@ -39,7 +40,7 @@ func (s *ShortMemoryStore) Upsert(taskID string, userID string, windowSize int, 
 		s.items[taskID] = item
 		return cloneWorking(item)
 	}
-	if strings.TrimSpace(userID) != "" {
+	if wkstr.NotEmpty(userID) {
 		item.UserID = userID
 	}
 	if windowSize > 0 {
@@ -123,8 +124,8 @@ func (s *ShortMemoryStore) DeleteExpired(now time.Time) int {
 func (s *ShortMemoryStore) List(userID string, taskID string, limit int) []*WorkingMemory {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	userID = strings.TrimSpace(userID)
-	taskID = strings.TrimSpace(taskID)
+	userID = wkstr.Trim(userID)
+	taskID = wkstr.Trim(taskID)
 	rows := make([]*WorkingMemory, 0, len(s.items))
 	for _, item := range s.items {
 		if taskID != "" && item.TaskID != taskID {

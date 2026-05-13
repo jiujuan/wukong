@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 const (
@@ -75,9 +77,9 @@ func NewSkillSpecSource(loader SkillSpecLoader) *SkillSpecSource {
 func (s *SkillSpecSource) Name() string { return "skill_spec" }
 
 func (s *SkillSpecSource) Load(ctx stdctx.Context, req BuildRequest) ([]ContextBlock, error) {
-	skillName := strings.TrimSpace(req.SkillName)
+	skillName := wkstr.Trim(req.SkillName)
 	if skillName == "" {
-		skillName = strings.TrimSpace(requestVarString(req, "skill_name"))
+		skillName = wkstr.Trim(requestVarString(req, "skill_name"))
 	}
 	if skillName == "" {
 		return nil, nil
@@ -106,7 +108,7 @@ func (s *SkillSpecSource) Load(ctx stdctx.Context, req BuildRequest) ([]ContextB
 func formatTaskState(req BuildRequest) string {
 	lines := make([]string, 0, 12)
 	appendLine := func(label, value string) {
-		value = strings.TrimSpace(value)
+		value = wkstr.Trim(value)
 		if value == "" {
 			return
 		}
@@ -136,7 +138,7 @@ func formatTaskState(req BuildRequest) string {
 	appendJSONLine("task_result", "task_result_json")
 	appendJSONLine("subtask_result", "subtask_result_json")
 
-	return strings.TrimSpace(strings.Join(lines, "\n"))
+	return wkstr.Trim(strings.Join(lines, "\n"))
 }
 
 func formatSkillSpec(spec *SkillSpec) string {
@@ -145,7 +147,7 @@ func formatSkillSpec(spec *SkillSpec) string {
 	}
 	lines := make([]string, 0, 12)
 	appendLine := func(label, value string) {
-		value = strings.TrimSpace(value)
+		value = wkstr.Trim(value)
 		if value == "" {
 			return
 		}
@@ -175,13 +177,13 @@ func formatSkillSpec(spec *SkillSpec) string {
 	if len(spec.Params) > 0 {
 		paramLines := make([]string, 0, len(spec.Params))
 		for _, item := range spec.Params {
-			name := strings.TrimSpace(item.Name)
+			name := wkstr.Trim(item.Name)
 			if name == "" {
 				continue
 			}
-			paramLine := fmt.Sprintf("%s(type=%s required=%t", name, strings.TrimSpace(item.Type), item.Required)
-			if strings.TrimSpace(item.DefaultVal) != "" {
-				paramLine += " default=" + strings.TrimSpace(item.DefaultVal)
+			paramLine := fmt.Sprintf("%s(type=%s required=%t", name, wkstr.Trim(item.Type), item.Required)
+			if wkstr.NotEmpty(item.DefaultVal) {
+				paramLine += " default=" + wkstr.Trim(item.DefaultVal)
 			}
 			paramLine += ")"
 			paramLines = append(paramLines, paramLine)
@@ -192,11 +194,11 @@ func formatSkillSpec(spec *SkillSpec) string {
 	}
 	if len(spec.Metadata) > 0 {
 		raw, err := json.Marshal(spec.Metadata)
-		if err == nil && strings.TrimSpace(string(raw)) != "" {
+		if err == nil && wkstr.NotEmpty(string(raw)) {
 			lines = append(lines, "metadata: "+string(raw))
 		}
 	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
+	return wkstr.Trim(strings.Join(lines, "\n"))
 }
 
 func requestJSONLike(req BuildRequest, key string) string {
@@ -209,15 +211,15 @@ func requestJSONLike(req BuildRequest, key string) string {
 	}
 	switch v := raw.(type) {
 	case string:
-		return strings.TrimSpace(v)
+		return wkstr.Trim(v)
 	case json.RawMessage:
-		return strings.TrimSpace(string(v))
+		return wkstr.Trim(string(v))
 	default:
 		data, err := json.Marshal(v)
 		if err != nil {
-			return strings.TrimSpace(fmt.Sprint(v))
+			return wkstr.Trim(fmt.Sprint(v))
 		}
-		return strings.TrimSpace(string(data))
+		return wkstr.Trim(string(data))
 	}
 }
 
@@ -229,5 +231,5 @@ func requestVarString(req BuildRequest, key string) string {
 	if !ok || raw == nil {
 		return ""
 	}
-	return strings.TrimSpace(fmt.Sprint(raw))
+	return wkstr.Trim(fmt.Sprint(raw))
 }

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type Manager struct {
@@ -104,11 +106,11 @@ func (m *Manager) CompressMemory(ctx context.Context, taskID string) (string, er
 	lines := make([]string, 0, window)
 	for i := start; i < len(item.FullHistory); i++ {
 		msg := item.FullHistory[i]
-		role := strings.TrimSpace(msg.Role)
+		role := wkstr.Trim(msg.Role)
 		if role == "" {
 			role = "unknown"
 		}
-		lines = append(lines, role+": "+strings.TrimSpace(msg.Content))
+		lines = append(lines, role+": "+wkstr.Trim(msg.Content))
 	}
 	summary := strings.Join(lines, "\n")
 	m.short.SetSummary(taskID, summary, true)
@@ -120,15 +122,15 @@ func (m *Manager) SessionArchive(ctx context.Context, taskID string, skillName s
 	if !ok {
 		return nil, nil
 	}
-	content := strings.TrimSpace(item.Summary)
+	content := wkstr.Trim(item.Summary)
 	if content == "" {
 		parts := make([]string, 0, len(item.FullHistory))
 		for _, msg := range item.FullHistory {
-			parts = append(parts, strings.TrimSpace(msg.Role)+": "+strings.TrimSpace(msg.Content))
+			parts = append(parts, wkstr.Trim(msg.Role)+": "+wkstr.Trim(msg.Content))
 		}
 		content = strings.Join(parts, "\n")
 	}
-	if strings.TrimSpace(topic) == "" {
+	if wkstr.Empty(topic) {
 		topic = "task_" + taskID
 	}
 	mem := m.long.Create(item.UserID, skillName, topic, content, taskID)
@@ -136,7 +138,7 @@ func (m *Manager) SessionArchive(ctx context.Context, taskID string, skillName s
 }
 
 func (m *Manager) SharedMemorySync(ctx context.Context, shareKey string, patch map[string]any) error {
-	if strings.TrimSpace(shareKey) == "" {
+	if wkstr.Empty(shareKey) {
 		return fmt.Errorf("share key empty")
 	}
 	m.mu.Lock()
@@ -206,7 +208,7 @@ func (m *Manager) write(ctx context.Context, namespace, key string, value map[st
 }
 
 func (m *Manager) writeWorking(taskID string, value map[string]any) error {
-	if strings.TrimSpace(taskID) == "" {
+	if wkstr.Empty(taskID) {
 		return fmt.Errorf("task id empty")
 	}
 	userID := readString(value, "user_id", "userId")
@@ -260,7 +262,7 @@ func (m *Manager) writeWorking(taskID string, value map[string]any) error {
 }
 
 func (m *Manager) writeLong(key string, value map[string]any, merge bool) error {
-	if strings.TrimSpace(key) != "" {
+	if wkstr.NotEmpty(key) {
 		if existing, ok := m.long.Get(key); ok && merge {
 			content := readString(value, "content")
 			if content == "" {
@@ -287,7 +289,7 @@ func (m *Manager) writeLong(key string, value map[string]any, merge bool) error 
 				item.Content = content
 				item.Topic = topic
 				item.UserID = userID
-				item.SkillName = strings.ToLower(strings.TrimSpace(skillName))
+				item.SkillName = wkstr.TrimLower(skillName)
 				item.SourceTaskID = sourceTaskID
 			}
 			m.long.mu.Unlock()
@@ -300,7 +302,7 @@ func (m *Manager) writeLong(key string, value map[string]any, merge bool) error 
 	content := readString(value, "content")
 	sourceTaskID := readString(value, "source_task_id", "sourceTaskId")
 	item := m.long.Create(userID, skillName, topic, content, sourceTaskID)
-	if strings.TrimSpace(key) != "" && key != item.MemoryID {
+	if wkstr.NotEmpty(key) && key != item.MemoryID {
 		m.long.mu.Lock()
 		delete(m.long.items, item.MemoryID)
 		item.MemoryID = key
@@ -311,7 +313,7 @@ func (m *Manager) writeLong(key string, value map[string]any, merge bool) error 
 }
 
 func (m *Manager) writeShared(shareKey string, value map[string]any, merge bool) error {
-	if strings.TrimSpace(shareKey) == "" {
+	if wkstr.Empty(shareKey) {
 		return fmt.Errorf("share key empty")
 	}
 	m.mu.Lock()
@@ -353,7 +355,7 @@ func (m *Manager) writeShared(shareKey string, value map[string]any, merge bool)
 }
 
 func normalizeNamespace(namespace string) string {
-	ns := strings.ToLower(strings.TrimSpace(namespace))
+	ns := wkstr.TrimLower(namespace)
 	switch ns {
 	case "", "working", "short", "short_term":
 		return NamespaceWorking
@@ -374,13 +376,13 @@ func readString(data map[string]any, keys ...string) string {
 		}
 		switch value := v.(type) {
 		case string:
-			if strings.TrimSpace(value) != "" {
-				return strings.TrimSpace(value)
+			if wkstr.NotEmpty(value) {
+				return wkstr.Trim(value)
 			}
 		default:
 			raw, err := json.Marshal(value)
 			if err == nil && len(raw) > 0 {
-				text := strings.TrimSpace(string(raw))
+				text := wkstr.Trim(string(raw))
 				if text != "null" && text != "\"\"" {
 					return text
 				}

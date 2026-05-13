@@ -2,8 +2,9 @@ package prompt
 
 import (
 	"fmt"
-	"strings"
 	"sync"
+
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 )
 
 type Engine struct {
@@ -30,7 +31,7 @@ func (e *Engine) Register(t *Template) error {
 	if t == nil {
 		return fmt.Errorf("template is nil")
 	}
-	key := strings.TrimSpace(t.Key)
+	key := wkstr.Trim(t.Key)
 	if key == "" {
 		return fmt.Errorf("template key is empty")
 	}
@@ -38,7 +39,7 @@ func (e *Engine) Register(t *Template) error {
 		return fmt.Errorf("template %q has no messages", key)
 	}
 	for i, msg := range t.Messages {
-		if strings.TrimSpace(msg.Role) == "" {
+		if wkstr.Empty(msg.Role) {
 			return fmt.Errorf("template %q message[%d] role is empty", key, i)
 		}
 	}
@@ -64,7 +65,7 @@ func (e *Engine) Get(key string) (*Template, bool) {
 	}
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	t, ok := e.templates[strings.TrimSpace(key)]
+	t, ok := e.templates[wkstr.Trim(key)]
 	if !ok {
 		return nil, false
 	}

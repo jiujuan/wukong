@@ -6,13 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/jiujuan/wukong/pkg/llm"
 	pkglogger "github.com/jiujuan/wukong/pkg/logger"
 	"github.com/jiujuan/wukong/pkg/skills"
+	wkstr "github.com/jiujuan/wukong/pkg/str"
 	tooltools "github.com/jiujuan/wukong/pkg/tool/tools"
 )
 
@@ -59,7 +59,7 @@ func (m *Manager) Register(tool Tool) {
 		m.logger.Warn("[ToolManager] skip register: tool is nil")
 		return
 	}
-	key := strings.ToLower(strings.TrimSpace(tool.Name()))
+	key := wkstr.TrimLower(tool.Name())
 	if key == "" {
 		m.logger.Warn("[ToolManager] skip register: tool name is empty")
 		return
@@ -71,7 +71,7 @@ func (m *Manager) Register(tool Tool) {
 }
 
 func (m *Manager) Get(name string) (Tool, bool) {
-	key := strings.ToLower(strings.TrimSpace(name))
+	key := wkstr.TrimLower(name)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	item, ok := m.tools[key]
@@ -121,8 +121,8 @@ func (m *Manager) Execute(ctx context.Context, name string, params map[string]an
 }
 
 func (m *Manager) ExecuteForSkill(ctx context.Context, skillName, toolName string, params map[string]any) (map[string]any, error) {
-	normalizedSkill := strings.ToLower(strings.TrimSpace(skillName))
-	normalizedTool := strings.ToLower(strings.TrimSpace(toolName))
+	normalizedSkill := wkstr.TrimLower(skillName)
+	normalizedTool := wkstr.TrimLower(toolName)
 	if m.skillsRegistry == nil {
 		return nil, fmt.Errorf("skills registry is not configured")
 	}
@@ -145,15 +145,15 @@ func (m *Manager) ExecuteForSkill(ctx context.Context, skillName, toolName strin
 		SourceType:  string(skill.Package.SourceType),
 		PackageName: skill.Package.PackageName,
 	}
-	if strings.TrimSpace(skill.Package.RootDir) != "" {
+	if wkstr.NotEmpty(skill.Package.RootDir) {
 		skillCtx.SkillRoot = skill.Package.RootDir
-	} else if strings.TrimSpace(skill.SourcePath) != "" {
+	} else if wkstr.NotEmpty(skill.SourcePath) {
 		skillCtx.SkillRoot = filepath.Dir(skill.SourcePath)
 	}
-	if strings.TrimSpace(skillCtx.SkillRoot) != "" {
+	if wkstr.NotEmpty(skillCtx.SkillRoot) {
 		skillCtx.SkillRoot = filepath.Clean(skillCtx.SkillRoot)
 	}
-	if strings.TrimSpace(m.fileWriteDir) != "" && strings.TrimSpace(skillCtx.SkillName) != "" {
+	if wkstr.NotEmpty(m.fileWriteDir) && wkstr.NotEmpty(skillCtx.SkillName) {
 		skillCtx.OutputDir = filepath.Join(m.fileWriteDir, skillCtx.SkillName)
 	}
 	ctx = tooltools.WithSkillContext(ctx, skillCtx)
