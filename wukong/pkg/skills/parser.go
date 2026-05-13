@@ -95,6 +95,11 @@ func parseSkillFile(path string, dirName string) (*Skill, error) {
 	return item, nil
 }
 
+// ParseSkillFile parses a legacy-style SKILL.md file.
+func ParseSkillFile(path string, dirName string) (*Skill, error) {
+	return parseSkillFile(path, dirName)
+}
+
 func parseMemoryConfigLine(item *Skill, line string) {
 	line = strings.TrimSpace(strings.TrimPrefix(line, "-"))
 	parts := strings.SplitN(line, ":", 2)

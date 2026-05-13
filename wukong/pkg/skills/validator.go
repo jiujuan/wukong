@@ -34,6 +34,7 @@ var allowedSkillTools = map[string]struct{}{
 	"file_write":   {},
 	"http_request": {},
 	"code_exec":    {},
+	"generate_ppt": {},
 	"memory_read":  {},
 	"memory_write": {},
 }

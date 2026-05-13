@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -71,6 +73,79 @@ func TestLLMPlannerUsesPromptEngineMessages(t *testing.T) {
 	}
 	if !strings.Contains((*requests)[0].Messages[1].Content, "skill_name: search") {
 		t.Fatalf("expected planner prompt to include skill spec context: %q", (*requests)[0].Messages[1].Content)
+	}
+}
+
+func TestLLMPlannerIncludesCanonicalSkillResourcesInPrompt(t *testing.T) {
+	root := t.TempDir()
+	writePlannerSkillPackage(t, filepath.Join(root, "local"), "search", "search skill", "run.sh", "#!/usr/bin/env bash\nprintf 'ok'\n")
+
+	registry := skills.New(skills.WithRootDir(root))
+	if err := registry.Start(context.Background()); err != nil {
+		t.Fatalf("start registry failed: %v", err)
+	}
+	defer registry.Stop()
+
+	server, requests := newPlannerCaptureServer(t, `{"thought":"plan","steps":[{"id":"s1","action":"web_search","params":{"query":"ai agent"},"depends_on":[]}]}`)
+	provider := llm.New(
+		llm.WithProviderType(llm.ProviderTypeOpenAPI),
+		llm.WithBaseURL(server.URL),
+		llm.WithModel("test-model"),
+	)
+	planner := NewLLMPlannerWithRegistry(provider, NewTplPlanner(), registry)
+
+	if _, err := planner.PlanSubTasks(context.Background(), newSearchTask()); err != nil {
+		t.Fatalf("plan failed: %v", err)
+	}
+	if len(*requests) != 1 {
+		t.Fatalf("unexpected llm requests: %#v", *requests)
+	}
+	content := (*requests)[0].Messages[1].Content
+	if !containsAll(content, []string{
+		"source_type: local",
+		"root_dir: " + filepath.Join(root, "local", "search"),
+		"runtime: bash",
+		"entry: run.sh",
+		"references: " + filepath.Join(root, "local", "search", "references", "guide.md"),
+		"assets: " + filepath.Join(root, "local", "search", "assets", "theme.json"),
+	}) {
+		t.Fatalf("planner prompt missing canonical skill fields: %q", content)
+	}
+	if !strings.Contains(content, `"references_count":1`) || !strings.Contains(content, `"assets_count":1`) {
+		t.Fatalf("planner prompt missing resource metadata: %q", content)
+	}
+}
+
+func writePlannerSkillPackage(t *testing.T, root, name, description, exec, script string) {
+	t.Helper()
+	skillDir := filepath.Join(root, name)
+	if err := os.MkdirAll(filepath.Join(skillDir, "references"), 0o755); err != nil {
+		t.Fatalf("mkdir references failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillDir, "assets"), 0o755); err != nil {
+		t.Fatalf("mkdir assets failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "references", "guide.md"), []byte("guide"), 0o644); err != nil {
+		t.Fatalf("write reference failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "assets", "theme.json"), []byte(`{"theme":"light"}`), 0o644); err != nil {
+		t.Fatalf("write asset failed: %v", err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	content := strings.Join([]string{
+		"# Skill: " + name,
+		"## Description",
+		description,
+		"## Tools",
+		"- llm_chat",
+		"## Execute",
+		"- " + exec,
+	}, "\n")
+	if err := os.WriteFile(skillFile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write skill file failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, exec), []byte(script), 0o644); err != nil {
+		t.Fatalf("write skill script failed: %v", err)
 	}
 }
 

@@ -154,3 +154,83 @@ func TestExecuteWithParams(t *testing.T) {
 		t.Fatalf("package metadata should not be nil: %#v", result)
 	}
 }
+
+func TestRegistryAdapterPriority(t *testing.T) {
+	dir := t.TempDir()
+	skillFile := filepath.Join(dir, "SKILL.md")
+	if err := os.WriteFile(skillFile, []byte("content"), 0o644); err != nil {
+		t.Fatalf("write skill file failed: %v", err)
+	}
+
+	r := New()
+	r.adapters = nil
+	r.RegisterAdapter(testAdapter{
+		match: true,
+		parse: func(path string) (*Skill, error) {
+			return &Skill{SkillName: "first", Enabled: true}, nil
+		},
+	})
+	r.RegisterAdapter(testAdapter{
+		match: true,
+		parse: func(path string) (*Skill, error) {
+			return &Skill{SkillName: "second", Enabled: true}, nil
+		},
+	})
+
+	got, err := r.parseSkillWithAdapters(skillFile)
+	if err != nil {
+		t.Fatalf("parseSkillWithAdapters failed: %v", err)
+	}
+	if got.SkillName != "first" {
+		t.Fatalf("skill name = %q, want first", got.SkillName)
+	}
+}
+
+func TestRegistryDuplicateSkillNameKeepsFirstLoaded(t *testing.T) {
+	root := t.TempDir()
+	mustWriteSkillPackage(t, filepath.Join(root, "local", "shared_skill"), skillPackageSpec{
+		name:   "shared_skill",
+		tools:  []string{"llm_chat"},
+		exec:   "run.sh",
+		script: "#!/usr/bin/env bash\nprintf 'local'\n",
+	})
+	mustWriteSkillPackage(t, filepath.Join(root, "vendor", "shared_skill"), skillPackageSpec{
+		name:     "shared_skill",
+		tools:    []string{"file_write"},
+		exec:     "run.sh",
+		script:   "#!/usr/bin/env bash\nprintf 'vendor'\n",
+		manifest: `{"package_name":"shared_skill","runtime":"bash","entry":"run.sh","permissions":{"tools":["file_write"]}}`,
+	})
+
+	r := New(WithRootDir(root))
+	if err := r.reload(context.Background()); err != nil {
+		t.Fatalf("reload failed: %v", err)
+	}
+	got, ok := r.Get("shared_skill")
+	if !ok {
+		t.Fatalf("shared skill not loaded")
+	}
+	if got.Package.SourceType != SourceLocal {
+		t.Fatalf("source type = %q, want local", got.Package.SourceType)
+	}
+	if !r.CanUseTool("shared_skill", "llm_chat") {
+		t.Fatalf("local skill tools should win")
+	}
+	if r.CanUseTool("shared_skill", "file_write") {
+		t.Fatalf("vendor duplicate should be ignored")
+	}
+}
+
+type testAdapter struct {
+	match bool
+	parse func(path string) (*Skill, error)
+}
+
+func (a testAdapter) Match(path string, content []byte) bool { return a.match }
+
+func (a testAdapter) Parse(path string) (*Skill, error) {
+	if a.parse == nil {
+		return nil, nil
+	}
+	return a.parse(path)
+}

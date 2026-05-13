@@ -20,7 +20,18 @@ var (
 func skillSandbox() *sandbox.Sandbox {
 	skillSandboxOnce.Do(func() {
 		skillSandboxInst = sandbox.New(
-			sandbox.WithAllowedEnvKeys("SKILL_NAME", "SKILL_PARAMS", "WUKONG_SKILL_ROOT", "WUKONG_OUTPUT_DIR"),
+			sandbox.WithAllowedEnvKeys(
+				"SKILL_NAME",
+				"SKILL_VERSION",
+				"SKILL_SOURCE_TYPE",
+				"SKILL_RUNTIME",
+				"SKILL_ENTRY",
+				"SKILL_PARAMS",
+				"SKILL_REFERENCES",
+				"SKILL_ASSETS",
+				"WUKONG_SKILL_ROOT",
+				"WUKONG_OUTPUT_DIR",
+			),
 		)
 	})
 	return skillSandboxInst
@@ -39,66 +50,58 @@ func (r *Registry) ExecuteWithParams(ctx context.Context, skillName string, para
 	if !ok {
 		return nil, fmt.Errorf("skill not found: %s", skillName)
 	}
-	if !item.Enabled {
-		return nil, fmt.Errorf("skill disabled: %s", skillName)
-	}
-	if item.Execute == "" {
-		return nil, fmt.Errorf("skill execute entry empty: %s", skillName)
-	}
+	return r.ExecuteWithSkill(ctx, item, params)
+}
 
-	rootDir := skillRootDir(item)
-	if rootDir == "" {
-		return nil, fmt.Errorf("skill root empty: %s", skillName)
+func (r *Registry) ExecuteWithSkill(ctx context.Context, skill *Skill, params map[string]any) (map[string]any, error) {
+	if skill == nil {
+		return nil, fmt.Errorf("skill is nil")
 	}
-	scriptPath := item.Execute
-	if !filepath.IsAbs(scriptPath) {
-		scriptPath = filepath.Join(rootDir, item.Execute)
+	if !skill.Enabled {
+		return nil, fmt.Errorf("skill disabled: %s", skill.SkillName)
 	}
-	absPath, err := filepath.Abs(scriptPath)
+	runtimeName, entry, err := resolveRuntimeEntry(skill)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateSkillPackage(rootDir, item); err != nil {
-		return nil, err
+	rootDir := skillRootDir(skill)
+	if rootDir == "" {
+		return nil, fmt.Errorf("skill root empty: %s", skill.SkillName)
 	}
-	outputDir := skillOutputDir(item.SkillName)
+	outputDir := skillOutputDir(skill.SkillName)
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return nil, err
 	}
+
+	envMap := skillRuntimeEnv(skill, rootDir, outputDir, runtimeName, entry, params)
 	runCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 	defer cancel()
 
-	envMap := map[string]string{
-		"SKILL_NAME":        item.SkillName,
-		"WUKONG_SKILL_ROOT": rootDir,
-		"WUKONG_OUTPUT_DIR": outputDir,
-	}
-	if len(params) > 0 {
-		raw, err := json.Marshal(params)
-		if err != nil {
-			return nil, err
-		}
-		envMap["SKILL_PARAMS"] = string(raw)
-	}
-	runtimeName := strings.TrimSpace(item.Package.Runtime)
-	if runtimeName == "" {
-		runtimeName = runtimeFromScript(absPath)
-	}
-	if strings.TrimSpace(runtimeName) == "" {
-		return nil, fmt.Errorf("unsupported execute script extension: %s", filepath.Ext(absPath))
-	}
-
-	result, err := skillSandbox().Execute(runCtx, sandbox.Request{
+	request := sandbox.Request{
 		Runtime:          runtimeName,
-		ScriptPath:       absPath,
 		WorkDir:          rootDir,
 		Env:              envMap,
 		Timeout:          r.execTimeout,
 		AllowedWorkRoots: []string{rootDir, outputDir},
-	})
+	}
+	if runtimeName == "command" {
+		request.Command = entry
+	} else {
+		scriptPath := entry
+		if !filepath.IsAbs(scriptPath) {
+			scriptPath = filepath.Join(rootDir, scriptPath)
+		}
+		absPath, err := filepath.Abs(scriptPath)
+		if err != nil {
+			return nil, err
+		}
+		request.ScriptPath = absPath
+	}
+
+	result, err := skillSandbox().Execute(runCtx, request)
 	output := combineSkillOutput(result.Stdout, result.Stderr)
 	payload := map[string]any{
-		"skill_name": item.SkillName,
+		"skill_name": skill.SkillName,
 		"output":     output,
 		"stdout":     result.Stdout,
 		"stderr":     result.Stderr,
@@ -106,7 +109,7 @@ func (r *Registry) ExecuteWithParams(ctx context.Context, skillName string, para
 		"truncated":  result.Truncated,
 		"skill_root": rootDir,
 		"output_dir": outputDir,
-		"package":    item.Package,
+		"package":    skill.Package,
 	}
 	if err != nil {
 		payload["error"] = err.Error()
@@ -137,6 +140,64 @@ func skillOutputDir(skillName string) string {
 		name = "skill"
 	}
 	return filepath.Join("storage", "output_data", name)
+}
+
+func skillRuntimeEnv(skill *Skill, rootDir, outputDir, runtimeName, entry string, params map[string]any) map[string]string {
+	envMap := map[string]string{
+		"SKILL_NAME":        skill.SkillName,
+		"SKILL_VERSION":     skill.Version,
+		"SKILL_SOURCE_TYPE": string(skill.Package.SourceType),
+		"SKILL_RUNTIME":     runtimeName,
+		"SKILL_ENTRY":       entry,
+		"WUKONG_SKILL_ROOT": rootDir,
+		"WUKONG_OUTPUT_DIR": outputDir,
+	}
+	if len(skill.References) > 0 {
+		raw, _ := json.Marshal(skill.References)
+		envMap["SKILL_REFERENCES"] = string(raw)
+	}
+	if len(skill.Assets) > 0 {
+		raw, _ := json.Marshal(skill.Assets)
+		envMap["SKILL_ASSETS"] = string(raw)
+	}
+	if len(params) > 0 {
+		raw, err := json.Marshal(params)
+		if err == nil {
+			envMap["SKILL_PARAMS"] = string(raw)
+		}
+	}
+	return envMap
+}
+
+func resolveRuntimeEntry(skill *Skill) (runtime string, entry string, err error) {
+	if skill == nil {
+		return "", "", fmt.Errorf("skill is nil")
+	}
+	canon := skill.Canonical()
+	runtime = strings.TrimSpace(canon.Runtime.Runtime)
+	entry = strings.TrimSpace(canon.Runtime.Entry)
+	if runtime == "" {
+		switch {
+		case entry != "":
+			runtime = runtimeFromScript(entry)
+		case strings.TrimSpace(skill.Execute) != "":
+			entry = strings.TrimSpace(skill.Execute)
+			runtime = runtimeFromScript(entry)
+		}
+	}
+	if runtime == "" {
+		return "", "", fmt.Errorf("unsupported execute script extension: %s", filepath.Ext(entry))
+	}
+	if runtime == "command" {
+		if entry == "" {
+			return "", "", fmt.Errorf("skill command entry is empty: %s", skill.SkillName)
+		}
+		return runtime, entry, nil
+	}
+	if entry == "" {
+		return "", "", fmt.Errorf("skill execute entry empty: %s", skill.SkillName)
+	}
+	return runtime, entry, nil
 }
 
 func runtimeFromScript(path string) string {

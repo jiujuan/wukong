@@ -1,6 +1,10 @@
 package skills
 
-import "context"
+import (
+	"context"
+
+	"github.com/jiujuan/wukong/pkg/skills/model"
+)
 
 type SourceType string
 
@@ -43,17 +47,30 @@ type SkillRoot struct {
 }
 
 type Skill struct {
-	SkillName   string       `json:"skill_name"`
-	Description string       `json:"description"`
-	Version     string       `json:"version"`
-	Enabled     bool         `json:"enabled"`
-	Params      []Param      `json:"params"`
-	Tools       []string     `json:"tools"`
-	Execute     string       `json:"execute,omitempty"`
-	Template    string       `json:"template,omitempty"`
-	Memory      MemoryConfig `json:"memory"`
-	SourcePath  string       `json:"source_path,omitempty"`
-	Package     PackageMeta  `json:"package,omitempty"`
+	SkillName   string         `json:"skill_name"`
+	Description string         `json:"description"`
+	Version     string         `json:"version"`
+	Enabled     bool           `json:"enabled"`
+	Params      []Param        `json:"params"`
+	Tools       []string       `json:"tools"`
+	Execute     string         `json:"execute,omitempty"`
+	Template    string         `json:"template,omitempty"`
+	Memory      MemoryConfig   `json:"memory"`
+	SourcePath  string         `json:"source_path,omitempty"`
+	References  []string       `json:"references,omitempty"`
+	Assets      []string       `json:"assets,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	Package     PackageMeta    `json:"package,omitempty"`
+}
+
+type Adapter interface {
+	Match(path string, content []byte) bool
+	Parse(path string) (*Skill, error)
+}
+
+// Canonical converts the skill into the unified canonical model.
+func (s *Skill) Canonical() model.CanonicalSkill {
+	return s.ToCanonical()
 }
 
 type MetaStore interface {

@@ -2,7 +2,9 @@ package skills
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -16,6 +18,7 @@ type Registry struct {
 	execTimeout  time.Duration
 	logger       *slog.Logger
 	store        MetaStore
+	adapters     []Adapter
 
 	mu      sync.RWMutex
 	skills  map[string]*Skill
@@ -36,6 +39,9 @@ func New(opts ...Option) *Registry {
 	}
 	if len(r.roots) == 0 {
 		r.roots = defaultSkillRoots(r.rootDir)
+	}
+	if len(r.adapters) == 0 {
+		r.adapters = defaultAdapters()
 	}
 	for _, item := range defaultBuiltins() {
 		r.skills[item.SkillName] = cloneSkill(item)
@@ -110,4 +116,37 @@ func (r *Registry) CanUseTool(skillName, tool string) bool {
 		}
 	}
 	return false
+}
+
+func (r *Registry) RegisterAdapter(adapter Adapter) {
+	if adapter == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.adapters = append(r.adapters, adapter)
+}
+
+func (r *Registry) parseSkillWithAdapters(path string) (*Skill, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	r.mu.RLock()
+	adapters := append([]Adapter(nil), r.adapters...)
+	r.mu.RUnlock()
+	if len(adapters) == 0 {
+		adapters = defaultAdapters()
+	}
+	for _, adapter := range adapters {
+		if adapter == nil || !adapter.Match(path, content) {
+			continue
+		}
+		item, err := adapter.Parse(path)
+		if err != nil {
+			return nil, err
+		}
+		return item, nil
+	}
+	return nil, fmt.Errorf("no skill adapter matched: %s", path)
 }

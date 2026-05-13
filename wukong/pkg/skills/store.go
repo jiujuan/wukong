@@ -34,5 +34,17 @@ func cloneSkill(src *Skill) *Skill {
 	if src.Tools != nil {
 		dst.Tools = append([]string(nil), src.Tools...)
 	}
+	if src.References != nil {
+		dst.References = append([]string(nil), src.References...)
+	}
+	if src.Assets != nil {
+		dst.Assets = append([]string(nil), src.Assets...)
+	}
+	if src.Metadata != nil {
+		dst.Metadata = make(map[string]any, len(src.Metadata))
+		for key, value := range src.Metadata {
+			dst.Metadata[key] = value
+		}
+	}
 	return &dst
 }

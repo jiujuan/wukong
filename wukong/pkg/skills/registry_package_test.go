@@ -127,6 +127,48 @@ func TestLoadSkillPackageRejectsInvalidTool(t *testing.T) {
 	}
 }
 
+func TestResolveSkillResources(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "resource_skill")
+	if err := os.MkdirAll(filepath.Join(skillDir, "references"), 0o755); err != nil {
+		t.Fatalf("mkdir references failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillDir, "assets", "images"), 0o755); err != nil {
+		t.Fatalf("mkdir assets failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "references", "guide.md"), []byte("guide"), 0o644); err != nil {
+		t.Fatalf("write reference failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "assets", "images", "cover.png"), []byte("png"), 0o644); err != nil {
+		t.Fatalf("write asset failed: %v", err)
+	}
+
+	references, assets, metadata, err := resolveSkillResources(skillDir)
+	if err != nil {
+		t.Fatalf("resolveSkillResources failed: %v", err)
+	}
+	if len(references) != 1 {
+		t.Fatalf("references = %#v", references)
+	}
+	if len(assets) != 1 {
+		t.Fatalf("assets = %#v", assets)
+	}
+	if metadata["references_count"] != 1 || metadata["assets_count"] != 1 {
+		t.Fatalf("metadata counts mismatch: %#v", metadata)
+	}
+	if !strings.HasPrefix(references[0], skillDir) || !strings.HasPrefix(assets[0], skillDir) {
+		t.Fatalf("resource paths should stay inside skill dir: %#v %#v", references, assets)
+	}
+}
+
+func TestResolveSkillResourcePathRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	escape := filepath.Join(root, "..", "escape.txt")
+	if _, err := resolveSkillResourcePath(root, escape); err == nil {
+		t.Fatalf("expected escape path to be rejected")
+	}
+}
+
 type skillPackageSpec struct {
 	name     string
 	tools    []string

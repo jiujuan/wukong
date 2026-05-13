@@ -90,12 +90,33 @@ func (r *Registry) loadFromDisk() (map[string]*Skill, error) {
 			if _, err := os.Stat(skillFile); err != nil {
 				continue
 			}
-			item, err := loadSkillPackage(skillFile, root.Type)
+			item, err := r.parseSkillWithAdapters(skillFile)
 			if err != nil {
 				if r.logger != nil {
 					r.logger.Warn("[skills] parse skill failed", "file", skillFile, "error", err)
 				}
 				continue
+			}
+			references, assets, metadata, err := resolveSkillResources(skillDir)
+			if err != nil {
+				if r.logger != nil {
+					r.logger.Warn("[skills] resolve skill resources failed", "dir", skillDir, "error", err)
+				}
+			} else {
+				item.References = references
+				item.Assets = assets
+				item.Metadata = mergeSkillMetadata(item.Metadata, metadata)
+			}
+			item.Package.SourceType = root.Type
+			item.Package.RootDir = skillDir
+			if strings.TrimSpace(item.Package.PackageName) == "" {
+				item.Package.PackageName = item.SkillName
+			}
+			if strings.TrimSpace(item.Package.ManifestPath) == "" {
+				manifestPath := filepath.Join(skillDir, "wukong.skill.json")
+				if _, err := os.Stat(manifestPath); err == nil {
+					item.Package.ManifestPath = manifestPath
+				}
 			}
 			if _, exists := result[item.SkillName]; exists {
 				continue
@@ -104,6 +125,20 @@ func (r *Registry) loadFromDisk() (map[string]*Skill, error) {
 		}
 	}
 	return result, nil
+}
+
+func mergeSkillMetadata(base, extra map[string]any) map[string]any {
+	if len(base) == 0 && len(extra) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(base)+len(extra))
+	for key, value := range base {
+		result[key] = value
+	}
+	for key, value := range extra {
+		result[key] = value
+	}
+	return result
 }
 
 func (r *Registry) skillRoots() []SkillRoot {
@@ -151,6 +186,10 @@ func loadSkillPackage(skillFile string, sourceType SourceType) (*Skill, error) {
 	if len(manifest.Tools) > 0 {
 		item.Tools = append([]string(nil), manifest.Tools...)
 	}
+	references, assets, metadata, err := resolveSkillResources(rootDir)
+	if err != nil {
+		return nil, err
+	}
 	item.Package = PackageMeta{
 		SourceType:   sourceType,
 		PackageName:  item.SkillName,
@@ -161,6 +200,9 @@ func loadSkillPackage(skillFile string, sourceType SourceType) (*Skill, error) {
 		RootDir:      rootDir,
 		ManifestPath: manifestPath,
 	}
+	item.References = references
+	item.Assets = assets
+	item.Metadata = metadata
 	if strings.TrimSpace(item.Package.Runtime) == "" && strings.TrimSpace(item.Execute) != "" {
 		item.Package.Runtime = runtimeFromScript(item.Execute)
 	}
@@ -168,4 +210,14 @@ func loadSkillPackage(skillFile string, sourceType SourceType) (*Skill, error) {
 		return nil, err
 	}
 	return item, nil
+}
+
+// LoadSkillPackage loads a skill package from SKILL.md and its adjacent manifest.
+func LoadSkillPackage(skillFile string, sourceType SourceType) (*Skill, error) {
+	return loadSkillPackage(skillFile, sourceType)
+}
+
+// LoadSkillPackage loads a skill package with registry context.
+func (r *Registry) LoadSkillPackage(skillFile string, sourceType SourceType) (*Skill, error) {
+	return loadSkillPackage(skillFile, sourceType)
 }

@@ -228,6 +228,72 @@ func TestActionPromptBuilderBuildMessagesIncludesContextEngineBlocks(t *testing.
 	}
 }
 
+func TestActionPromptBuilderIncludesCanonicalSkillResources(t *testing.T) {
+	root := t.TempDir()
+	writeWorkerSkillPackage(t, filepath.Join(root, "local"), "report_gen", "report generation skill", "run.sh", "#!/usr/bin/env bash\nprintf 'ok'\n")
+
+	registry := skills.New(skills.WithRootDir(root))
+	if err := registry.Start(context.Background()); err != nil {
+		t.Fatalf("start registry failed: %v", err)
+	}
+	defer registry.Stop()
+
+	builder := NewActionPromptBuilderWithRegistry(registry)
+	msgs, err := builder.BuildMessages(context.Background(), &fakeSubTask{
+		subTaskID: "sub-ctx-2",
+		taskID:    "task-ctx-2",
+		action:    "report_gen",
+		params:    map[string]any{"query": "annual report"},
+	})
+	if err != nil {
+		t.Fatalf("build messages failed: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("unexpected message count: %d", len(msgs))
+	}
+	content := msgs[1].Content
+	if !strings.Contains(content, "source_type: local") || !strings.Contains(content, "root_dir: "+filepath.Join(root, "local", "report_gen")) {
+		t.Fatalf("skill spec should include source fields: %q", content)
+	}
+	if !strings.Contains(content, "references: "+filepath.Join(root, "local", "report_gen", "references", "guide.md")) || !strings.Contains(content, "assets: "+filepath.Join(root, "local", "report_gen", "assets", "cover.png")) {
+		t.Fatalf("skill spec should include resource fields: %q", content)
+	}
+	if !strings.Contains(content, `"references_count":1`) || !strings.Contains(content, `"assets_count":1`) {
+		t.Fatalf("skill spec should include resource metadata: %q", content)
+	}
+}
+
+func writeWorkerSkillPackage(t *testing.T, root, name, description, exec, script string) {
+	t.Helper()
+	skillDir := filepath.Join(root, name)
+	if err := os.MkdirAll(filepath.Join(skillDir, "references"), 0o755); err != nil {
+		t.Fatalf("mkdir references failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillDir, "assets"), 0o755); err != nil {
+		t.Fatalf("mkdir assets failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "references", "guide.md"), []byte("guide"), 0o644); err != nil {
+		t.Fatalf("write reference failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "assets", "cover.png"), []byte("png"), 0o644); err != nil {
+		t.Fatalf("write asset failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(strings.Join([]string{
+		"# Skill: " + name,
+		"## Description",
+		description,
+		"## Tools",
+		"- llm_chat",
+		"## Execute",
+		"- " + exec,
+	}, "\n")), 0o644); err != nil {
+		t.Fatalf("write skill file failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, exec), []byte(script), 0o644); err != nil {
+		t.Fatalf("write skill script failed: %v", err)
+	}
+}
+
 func TestLLMActionExecutorExecute(t *testing.T) {
 	server, script := newLLMServerScript([]llm.ChatResponse{{
 		Model: "test-model",

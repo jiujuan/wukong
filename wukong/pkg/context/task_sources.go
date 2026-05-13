@@ -24,11 +24,18 @@ type SkillSpec struct {
 	Description    string
 	Version        string
 	Enabled        bool
+	SourceType     string
+	RootDir        string
+	Runtime        string
+	Entry          string
 	Tools          []string
 	Params         []SkillParam
 	MemoryType     string
 	MemoryWindow   int
 	MemoryCompress bool
+	References     []string
+	Assets         []string
+	Metadata       map[string]any
 }
 
 type SkillSpecLoader interface {
@@ -148,9 +155,19 @@ func formatSkillSpec(spec *SkillSpec) string {
 	appendLine("skill_name", spec.SkillName)
 	appendLine("description", spec.Description)
 	appendLine("version", spec.Version)
+	appendLine("source_type", spec.SourceType)
+	appendLine("root_dir", spec.RootDir)
+	appendLine("runtime", spec.Runtime)
+	appendLine("entry", spec.Entry)
 	lines = append(lines, fmt.Sprintf("enabled: %t", spec.Enabled))
 	if len(spec.Tools) > 0 {
 		lines = append(lines, fmt.Sprintf("tools: %s", strings.Join(spec.Tools, ", ")))
+	}
+	if len(spec.References) > 0 {
+		lines = append(lines, fmt.Sprintf("references: %s", strings.Join(spec.References, ", ")))
+	}
+	if len(spec.Assets) > 0 {
+		lines = append(lines, fmt.Sprintf("assets: %s", strings.Join(spec.Assets, ", ")))
 	}
 	if spec.MemoryType != "" || spec.MemoryWindow > 0 {
 		lines = append(lines, fmt.Sprintf("memory: type=%s window=%d compress=%t", spec.MemoryType, spec.MemoryWindow, spec.MemoryCompress))
@@ -171,6 +188,12 @@ func formatSkillSpec(spec *SkillSpec) string {
 		}
 		if len(paramLines) > 0 {
 			lines = append(lines, "params: "+strings.Join(paramLines, "; "))
+		}
+	}
+	if len(spec.Metadata) > 0 {
+		raw, err := json.Marshal(spec.Metadata)
+		if err == nil && strings.TrimSpace(string(raw)) != "" {
+			lines = append(lines, "metadata: "+string(raw))
 		}
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
