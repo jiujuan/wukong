@@ -62,6 +62,7 @@ type LoopState struct {
 	AgentState   AgentState     `json:"agent_state"`
 	AgentContext AgentContext   `json:"agent_context"`
 	Plan         map[string]any `json:"plan,omitempty"`
+	AgentPlan    *AgentPlan     `json:"agent_plan,omitempty"`
 	StepCursor   int            `json:"step_cursor"`
 	StepResults  []LoopStep     `json:"step_results,omitempty"`
 	ActionResult *ActionResult  `json:"action_result,omitempty"`

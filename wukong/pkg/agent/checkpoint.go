@@ -28,6 +28,7 @@ type LoopCheckpoint struct {
 	AgentState   AgentState     `json:"agent_state"`
 	AgentContext AgentContext   `json:"agent_context"`
 	Plan         map[string]any `json:"plan,omitempty"`
+	AgentPlan    *AgentPlan     `json:"agent_plan,omitempty"`
 	StepResults  []LoopStep     `json:"step_results,omitempty"`
 	Context      map[string]any `json:"context,omitempty"`
 	Status       LoopStatus     `json:"status"`
@@ -55,6 +56,7 @@ func NewLoopCheckpoint(state *LoopState) LoopCheckpoint {
 		AgentState:   cloneAgentState(state.AgentState),
 		AgentContext: cloneAgentContext(state.AgentContext),
 		Plan:         cloneMap(state.Plan),
+		AgentPlan:    cloneAgentPlanPtr(state.AgentPlan),
 		StepResults:  cloneLoopSteps(state.StepResults),
 		Context:      cloneMap(state.Request.Context),
 		Status:       state.Status,
@@ -74,6 +76,7 @@ func (c LoopCheckpoint) Clone() LoopCheckpoint {
 	clone.AgentState = cloneAgentState(c.AgentState)
 	clone.AgentContext = cloneAgentContext(c.AgentContext)
 	clone.Plan = cloneMap(c.Plan)
+	clone.AgentPlan = cloneAgentPlanPtr(c.AgentPlan)
 	clone.StepResults = cloneLoopSteps(c.StepResults)
 	clone.Context = cloneMap(c.Context)
 	clone.Metadata = cloneMap(c.Metadata)
@@ -92,6 +95,7 @@ func (c LoopCheckpoint) ToLoopState() *LoopState {
 		AgentState:   clone.AgentState,
 		AgentContext: clone.AgentContext,
 		Plan:         clone.Plan,
+		AgentPlan:    clone.AgentPlan,
 		StepCursor:   clone.StepCursor,
 		StepResults:  clone.StepResults,
 		LastError:    clone.LastError,
@@ -240,6 +244,14 @@ func cloneLoopSteps(in []LoopStep) []LoopStep {
 		out[i].Metadata = cloneMap(step.Metadata)
 	}
 	return out
+}
+
+func cloneAgentPlanPtr(in *AgentPlan) *AgentPlan {
+	if in == nil {
+		return nil
+	}
+	out := in.Clone()
+	return &out
 }
 
 func cloneActionResult(in ActionResult) ActionResult {

@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+// ResumableLoop continues a checkpointed loop state.
+type ResumableLoop interface {
+	Resume(ctx context.Context, state *LoopState, decision *LoopDecision) (*RunResult, error)
+}
+
 // Resume restores a checkpointed loop state and applies one human response.
 func (r *AgentRuntime) Resume(ctx context.Context, runID string, input HumanInput) (*RunResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -34,6 +39,12 @@ func (r *AgentRuntime) Resume(ctx context.Context, runID string, input HumanInpu
 		return nil, err
 	}
 	applyResumePatch(state, decision)
+
+	loop := r.loopFactory.NewLoop(state.Agent)
+	resumable, ok := loop.(ResumableLoop)
+	if ok {
+		return resumable.Resume(ctx, state, decision)
+	}
 
 	return &RunResult{
 		RunID:       state.RunID,

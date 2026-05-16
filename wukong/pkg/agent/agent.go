@@ -137,6 +137,7 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 		return l.handleLoopError(ctx, state, err)
 	}
 	state.Plan = planToMap(plan)
+	state.AgentPlan = cloneAgentPlanPtr(plan)
 
 	retries := 0
 	maxRetries := l.maxReflectRetries()
@@ -154,6 +155,7 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 		state.ActionResult = actionResult
 		if actionResult != nil {
 			state.StepResults = stepResultsToLoopSteps(actionResult.StepResults)
+			state.StepCursor = stepCursorFromStepResults(actionResult.StepResults)
 		}
 		if err != nil {
 			return l.handleLoopError(ctx, state, err)
@@ -193,6 +195,7 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 		}
 		plan = revised
 		state.Plan = planToMap(plan)
+		state.AgentPlan = cloneAgentPlanPtr(plan)
 	}
 
 	state.Phase = LoopPhaseLearn
@@ -200,6 +203,60 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 	if _, err := l.controller.AfterIteration(ctx, state); err != nil {
 		return nil, err
 	}
+	if err := l.saveCheckpoint(ctx, state); err != nil {
+		return nil, err
+	}
+	return buildRunResult(state), nil
+}
+
+// Resume continues a checkpointed Agent Loop from its step cursor.
+func (l *AgentLoop) Resume(ctx context.Context, state *LoopState, decision *LoopDecision) (*RunResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if state == nil {
+		return nil, fmt.Errorf("loop state is nil")
+	}
+	plan := cloneAgentPlanPtr(state.AgentPlan)
+	if plan == nil {
+		return nil, fmt.Errorf("checkpoint missing agent plan")
+	}
+	applyPatchToRemainingSteps(plan, state.StepCursor, decision)
+	state.AgentPlan = cloneAgentPlanPtr(plan)
+	state.Plan = planToMap(plan)
+
+	if state.StepCursor >= len(plan.Steps) {
+		state.Status = LoopStatusCompleted
+		if err := l.saveCheckpoint(ctx, state); err != nil {
+			return nil, err
+		}
+		return buildRunResult(state), nil
+	}
+
+	resumePlan := plan.Clone()
+	resumePlan.Steps = clonePlanSteps(plan.Steps[state.StepCursor:])
+	state.Phase = LoopPhaseAct
+	actionResult, err := l.actionRun.RunPlan(ctx, state.AgentContext, &resumePlan)
+	if actionResult != nil {
+		state.ActionResult = actionResult
+		for _, step := range stepResultsToLoopSteps(actionResult.StepResults) {
+			step.Index += state.StepCursor
+			state.StepResults = append(state.StepResults, step)
+		}
+	}
+	if err != nil {
+		return l.handleLoopError(ctx, state, err)
+	}
+	state.StepCursor = len(plan.Steps)
+
+	state.Phase = LoopPhaseReflect
+	evaluation, err := l.reflector.Reflect(ctx, state.AgentContext, plan, actionResult, nil)
+	if err != nil {
+		return l.handleLoopError(ctx, state, err)
+	}
+	state.Evaluation = evaluation
+	state.Phase = LoopPhaseLearn
+	state.Status = LoopStatusCompleted
 	if err := l.saveCheckpoint(ctx, state); err != nil {
 		return nil, err
 	}
@@ -214,6 +271,23 @@ func (l *AgentLoop) maxReflectRetries() int {
 		return l.profile.Reasoning.MaxRetries
 	}
 	return 1
+}
+
+func applyPatchToRemainingSteps(plan *AgentPlan, cursor int, decision *LoopDecision) {
+	if plan == nil || decision == nil || len(decision.Patch) == 0 {
+		return
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+	for i := cursor; i < len(plan.Steps); i++ {
+		if plan.Steps[i].Params == nil {
+			plan.Steps[i].Params = make(map[string]any)
+		}
+		for key, value := range decision.Patch {
+			plan.Steps[i].Params[key] = value
+		}
+	}
 }
 
 func (l *AgentLoop) handleLoopError(ctx context.Context, state *LoopState, err error) (*RunResult, error) {
@@ -409,6 +483,17 @@ func stepResultsToLoopSteps(in []StepResult) []LoopStep {
 		}
 	}
 	return out
+}
+
+func stepCursorFromStepResults(in []StepResult) int {
+	cursor := 0
+	for _, step := range in {
+		if step.Status != "completed" {
+			break
+		}
+		cursor++
+	}
+	return cursor
 }
 
 func planToMap(plan *AgentPlan) map[string]any {
