@@ -12,7 +12,7 @@ type Runtime interface {
 	Stop(ctx context.Context) error
 	RegisterAgent(profile AgentProfile) error
 	Run(ctx context.Context, req RunRequest) (*RunResult, error)
-	Resume(ctx context.Context, runID string, input map[string]any) (*RunResult, error)
+	Resume(ctx context.Context, runID string, input HumanInput) (*RunResult, error)
 }
 
 // AgentRegistry stores available agent profiles.
@@ -44,6 +44,8 @@ type AgentRuntime struct {
 	registry    AgentRegistry
 	router      AgentRouter
 	loopFactory LoopFactory
+	checkpoints CheckpointStore
+	controller  LoopController
 }
 
 // NewRuntime creates an Agent Runtime with noop dependencies that can be replaced by options.
@@ -70,10 +72,22 @@ func NewRuntime(options ...Option) *AgentRuntime {
 		loopFactory = NoopLoopFactory{}
 	}
 
+	checkpoints := cfg.checkpoints
+	if checkpoints == nil {
+		checkpoints = NewInMemoryCheckpointStore()
+	}
+
+	controller := cfg.controller
+	if controller == nil {
+		controller = NewDefaultLoopController()
+	}
+
 	return &AgentRuntime{
 		registry:    registry,
 		router:      router,
 		loopFactory: loopFactory,
+		checkpoints: checkpoints,
+		controller:  controller,
 	}
 }
 
@@ -128,17 +142,6 @@ func (r *AgentRuntime) Run(ctx context.Context, req RunRequest) (*RunResult, err
 		return nil, fmt.Errorf("agent loop factory returned nil loop for agent %q", profile.ID)
 	}
 	return loop.Run(ctx, req.Clone())
-}
-
-// Resume is a placeholder for checkpoint-backed resume support added in later milestones.
-func (r *AgentRuntime) Resume(ctx context.Context, runID string, input map[string]any) (*RunResult, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if !r.isStarted() {
-		return nil, ErrRuntimeNotStarted
-	}
-	return nil, fmt.Errorf("resume run %q: not implemented", runID)
 }
 
 // Registry exposes the current registry for adapters and tests.

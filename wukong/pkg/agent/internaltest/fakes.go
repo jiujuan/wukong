@@ -31,7 +31,7 @@ type Runtime struct {
 // ResumeCall records one Resume invocation.
 type ResumeCall struct {
 	RunID string
-	Input map[string]any
+	Input agent.HumanInput
 }
 
 // Start records the runtime as started.
@@ -77,13 +77,13 @@ func (r *Runtime) Run(ctx context.Context, req agent.RunRequest) (*agent.RunResu
 }
 
 // Resume records a resume request and returns the configured result.
-func (r *Runtime) Resume(ctx context.Context, runID string, input map[string]any) (*agent.RunResult, error) {
+func (r *Runtime) Resume(ctx context.Context, runID string, input agent.HumanInput) (*agent.RunResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	r.ResumeCalls = append(r.ResumeCalls, ResumeCall{
 		RunID: runID,
-		Input: cloneMap(input),
+		Input: cloneHumanInput(input),
 	})
 	return r.ResumeResult, r.ResumeErr
 }
@@ -178,5 +178,12 @@ func cloneMap(in map[string]any) map[string]any {
 	for key, value := range in {
 		out[key] = value
 	}
+	return out
+}
+
+func cloneHumanInput(in agent.HumanInput) agent.HumanInput {
+	out := in
+	out.Patch = cloneMap(in.Patch)
+	out.Metadata = cloneMap(in.Metadata)
 	return out
 }
