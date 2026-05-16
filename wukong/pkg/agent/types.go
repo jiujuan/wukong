@@ -194,13 +194,33 @@ type LoopStep struct {
 	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
+// StepResult records the execution result of one AgentPlan step.
+type StepResult struct {
+	StepID      string         `json:"step_id"`
+	Index       int            `json:"index"`
+	Type        StepType       `json:"type"`
+	Action      string         `json:"action,omitempty"`
+	Target      string         `json:"target,omitempty"`
+	SkillName   string         `json:"skill_name,omitempty"`
+	AgentID     AgentID        `json:"agent_id,omitempty"`
+	Status      string         `json:"status"`
+	Output      string         `json:"output,omitempty"`
+	Result      map[string]any `json:"result,omitempty"`
+	Error       string         `json:"error,omitempty"`
+	StartedAt   time.Time      `json:"started_at,omitempty"`
+	CompletedAt time.Time      `json:"completed_at,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+}
+
 // ActionResult is the aggregate result produced by action execution.
 type ActionResult struct {
-	Status string         `json:"status"`
-	Output string         `json:"output,omitempty"`
-	Result map[string]any `json:"result,omitempty"`
-	Steps  []LoopStep     `json:"steps,omitempty"`
-	Error  string         `json:"error,omitempty"`
+	Status      string         `json:"status"`
+	Output      string         `json:"output,omitempty"`
+	Result      map[string]any `json:"result,omitempty"`
+	StepResults []StepResult   `json:"step_results,omitempty"`
+	Steps       []LoopStep     `json:"steps,omitempty"`
+	Error       string         `json:"error,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
 // Evaluation is the reflection result for a run or plan execution.
