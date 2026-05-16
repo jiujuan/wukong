@@ -2,16 +2,9 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 )
-
-// ErrAgentNotFound is returned when a run cannot be routed to an agent profile.
-var ErrAgentNotFound = errors.New("agent not found")
-
-// ErrRuntimeNotStarted is returned when a run is requested before Start.
-var ErrRuntimeNotStarted = errors.New("agent runtime not started")
 
 // Runtime is the public facade for Agent Runtime lifecycle and execution.
 type Runtime interface {
