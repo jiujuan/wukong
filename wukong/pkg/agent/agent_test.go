@@ -35,6 +35,9 @@ func TestAgentLoopSingleActionRunSucceeds(t *testing.T) {
 	if result.Result["ok"] != true {
 		t.Fatalf("RunResult Result = %#v, want ok=true", result.Result)
 	}
+	if result.Strategy != "direct" {
+		t.Fatalf("RunResult Strategy = %q, want direct", result.Strategy)
+	}
 }
 
 func TestAgentLoopActionErrorGoesThroughController(t *testing.T) {

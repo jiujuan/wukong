@@ -367,6 +367,7 @@ func buildRunResult(state *LoopState) *RunResult {
 		TaskID:      state.Request.TaskID,
 		SubTaskID:   state.Request.SubTaskID,
 		Status:      string(state.Status),
+		Strategy:    strategyFromState(state),
 		Steps:       cloneLoopSteps(state.StepResults),
 		Evaluation:  state.Evaluation,
 		Error:       state.LastError,
@@ -377,6 +378,14 @@ func buildRunResult(state *LoopState) *RunResult {
 		result.Result = cloneMap(state.ActionResult.Result)
 	}
 	return result
+}
+
+func strategyFromState(state *LoopState) string {
+	if state == nil || state.Plan == nil {
+		return ""
+	}
+	strategy, _ := state.Plan["strategy"].(string)
+	return strategy
 }
 
 func stepResultsToLoopSteps(in []StepResult) []LoopStep {

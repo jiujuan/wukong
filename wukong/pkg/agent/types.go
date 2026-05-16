@@ -142,6 +142,7 @@ type RunResult struct {
 	TaskID      string         `json:"task_id"`
 	SubTaskID   string         `json:"sub_task_id,omitempty"`
 	Status      string         `json:"status"`
+	Strategy    string         `json:"strategy,omitempty"`
 	Output      string         `json:"output,omitempty"`
 	Result      map[string]any `json:"result,omitempty"`
 	Steps       []LoopStep     `json:"steps,omitempty"`
