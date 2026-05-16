@@ -30,6 +30,13 @@ type Reflector interface {
 	Reflect(ctx context.Context, agentCtx AgentContext, plan *AgentPlan, result *ActionResult, execErr error) (*Evaluation, error)
 }
 
+// LoopMemoryProvider loads memory into AgentContext and writes run experience back.
+type LoopMemoryProvider interface {
+	Load(ctx context.Context, req RunRequest, profile AgentProfile) (*MemorySnapshot, error)
+	AppendEvent(ctx context.Context, event AgentEvent) error
+	WriteRun(ctx context.Context, agentCtx AgentContext, result *ActionResult, eval *Evaluation) error
+}
+
 // AgentLoopOption configures an AgentLoop.
 type AgentLoopOption func(*AgentLoop)
 
@@ -41,6 +48,7 @@ type AgentLoop struct {
 	strategy    PlanStrategy
 	actionRun   PlanActionRunner
 	reflector   Reflector
+	memory      LoopMemoryProvider
 }
 
 // NewAgentLoop creates a minimal Agent Loop.
@@ -52,6 +60,7 @@ func NewAgentLoop(profile AgentProfile, options ...AgentLoopOption) *AgentLoop {
 		strategy:    DirectPlanStrategy{},
 		actionRun:   NewSequentialActionRunner(),
 		reflector:   NoopReflector{},
+		memory:      NoopLoopMemoryProvider{},
 	}
 	for _, option := range options {
 		if option != nil {
@@ -106,6 +115,15 @@ func WithAgentLoopReflector(reflector Reflector) AgentLoopOption {
 	}
 }
 
+// WithAgentLoopMemoryProvider configures memory loading and write-back.
+func WithAgentLoopMemoryProvider(provider LoopMemoryProvider) AgentLoopOption {
+	return func(loop *AgentLoop) {
+		if provider != nil {
+			loop.memory = provider
+		}
+	}
+}
+
 // Run executes a minimal Agent Loop.
 func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -123,7 +141,13 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 		Agent:   cloneAgentProfile(l.profile),
 		State:   cloneAgentState(agentState),
 	}
+	if err := l.loadMemory(ctx, req, &agentCtx); err != nil {
+		return nil, err
+	}
 	state := NewLoopState(req, l.profile, agentState, agentCtx)
+	if err := l.appendMemoryEvent(ctx, state, "run_started", "agent loop started"); err != nil {
+		return nil, err
+	}
 
 	if decision, err := l.controller.BeforeRun(ctx, state); err != nil {
 		return nil, err
@@ -177,6 +201,9 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 			if _, err := l.controller.AfterIteration(ctx, state); err != nil {
 				return nil, err
 			}
+			if err := l.writeMemoryRun(ctx, state); err != nil {
+				return nil, err
+			}
 			if err := l.saveCheckpoint(ctx, state); err != nil {
 				return nil, err
 			}
@@ -201,6 +228,12 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 	state.Phase = LoopPhaseLearn
 	state.Status = LoopStatusCompleted
 	if _, err := l.controller.AfterIteration(ctx, state); err != nil {
+		return nil, err
+	}
+	if err := l.writeMemoryRun(ctx, state); err != nil {
+		return nil, err
+	}
+	if err := l.appendMemoryEvent(ctx, state, "run_completed", "agent loop completed"); err != nil {
 		return nil, err
 	}
 	if err := l.saveCheckpoint(ctx, state); err != nil {
@@ -257,6 +290,12 @@ func (l *AgentLoop) Resume(ctx context.Context, state *LoopState, decision *Loop
 	state.Evaluation = evaluation
 	state.Phase = LoopPhaseLearn
 	state.Status = LoopStatusCompleted
+	if err := l.writeMemoryRun(ctx, state); err != nil {
+		return nil, err
+	}
+	if err := l.appendMemoryEvent(ctx, state, "run_completed", "agent loop completed"); err != nil {
+		return nil, err
+	}
 	if err := l.saveCheckpoint(ctx, state); err != nil {
 		return nil, err
 	}
@@ -296,6 +335,8 @@ func (l *AgentLoop) handleLoopError(ctx context.Context, state *LoopState, err e
 	if controllerErr != nil {
 		return nil, controllerErr
 	}
+	_ = l.writeMemoryRun(ctx, state)
+	_ = l.appendMemoryEvent(ctx, state, "run_failed", err.Error())
 	_ = l.saveCheckpoint(ctx, state)
 	return buildRunResult(state), err
 }
@@ -305,6 +346,46 @@ func (l *AgentLoop) saveCheckpoint(ctx context.Context, state *LoopState) error 
 		return nil
 	}
 	return l.checkpoints.Save(ctx, NewLoopCheckpoint(state))
+}
+
+func (l *AgentLoop) loadMemory(ctx context.Context, req RunRequest, agentCtx *AgentContext) error {
+	if l.memory == nil || agentCtx == nil {
+		return nil
+	}
+	snapshot, err := l.memory.Load(ctx, req, l.profile)
+	if err != nil {
+		return err
+	}
+	if snapshot == nil {
+		return nil
+	}
+	agentCtx.WorkingMemory = cloneMemoryItems(snapshot.Working)
+	agentCtx.LongMemory = cloneMemoryItems(snapshot.Long)
+	agentCtx.SharedMemory = cloneMap(snapshot.Shared)
+	return nil
+}
+
+func (l *AgentLoop) writeMemoryRun(ctx context.Context, state *LoopState) error {
+	if l.memory == nil || state == nil {
+		return nil
+	}
+	return l.memory.WriteRun(ctx, state.AgentContext, state.ActionResult, state.Evaluation)
+}
+
+func (l *AgentLoop) appendMemoryEvent(ctx context.Context, state *LoopState, eventType, message string) error {
+	if l.memory == nil || state == nil {
+		return nil
+	}
+	return l.memory.AppendEvent(ctx, AgentEvent{
+		RunID:     state.RunID,
+		Type:      eventType,
+		Message:   message,
+		Timestamp: time.Now(),
+		Metadata: map[string]any{
+			"phase":  string(state.Phase),
+			"status": string(state.Status),
+		},
+	})
 }
 
 // NoopReflector returns a successful evaluation without additional work.
@@ -322,6 +403,27 @@ func (NoopReflector) Reflect(ctx context.Context, _ AgentContext, _ *AgentPlan, 
 		return &Evaluation{Success: false, Score: 0, Reason: result.Error, Retry: true}, nil
 	}
 	return &Evaluation{Success: true, Score: 1, Reason: "noop reflector accepted result"}, nil
+}
+
+// NoopLoopMemoryProvider is a safe default memory provider for AgentLoop.
+type NoopLoopMemoryProvider struct{}
+
+// Load returns an empty memory snapshot.
+func (NoopLoopMemoryProvider) Load(ctx context.Context, _ RunRequest, _ AgentProfile) (*MemorySnapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return &MemorySnapshot{}, nil
+}
+
+// AppendEvent ignores memory events.
+func (NoopLoopMemoryProvider) AppendEvent(ctx context.Context, _ AgentEvent) error {
+	return ctx.Err()
+}
+
+// WriteRun ignores memory write-back.
+func (NoopLoopMemoryProvider) WriteRun(ctx context.Context, _ AgentContext, _ *ActionResult, _ *Evaluation) error {
+	return ctx.Err()
 }
 
 // DirectPlanStrategy is a local direct strategy used by the minimal AgentLoop default.

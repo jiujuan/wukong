@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"time"
 
 	"github.com/jiujuan/wukong/pkg/agent"
 )
@@ -18,29 +17,17 @@ const (
 
 // MemoryProvider loads and writes memory for Agent Loop runs.
 type MemoryProvider interface {
-	Load(ctx context.Context, req agent.RunRequest, profile agent.AgentProfile) (*MemorySnapshot, error)
+	Load(ctx context.Context, req agent.RunRequest, profile agent.AgentProfile) (*agent.MemorySnapshot, error)
 	AppendEvent(ctx context.Context, event agent.AgentEvent) error
 	WriteRun(ctx context.Context, agentCtx agent.AgentContext, result *agent.ActionResult, eval *agent.Evaluation) error
 	Search(ctx context.Context, query MemoryQuery) ([]MemoryItem, error)
 }
 
 // MemorySnapshot groups memory loaded before planning.
-type MemorySnapshot struct {
-	Working []MemoryItem   `json:"working,omitempty"`
-	Long    []MemoryItem   `json:"long,omitempty"`
-	Shared  map[string]any `json:"shared,omitempty"`
-}
+type MemorySnapshot = agent.MemorySnapshot
 
 // MemoryItem is an agent-layer memory record independent of storage details.
-type MemoryItem struct {
-	ID        string         `json:"id,omitempty"`
-	Namespace string         `json:"namespace,omitempty"`
-	Key       string         `json:"key,omitempty"`
-	Content   string         `json:"content,omitempty"`
-	Score     float64        `json:"score,omitempty"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
-	CreatedAt time.Time      `json:"created_at,omitempty"`
-}
+type MemoryItem = agent.MemoryItem
 
 // MemoryQuery describes a memory lookup request.
 type MemoryQuery struct {
@@ -66,11 +53,11 @@ type MemoryPolicy interface {
 type NoopMemoryProvider struct{}
 
 // Load returns an empty snapshot.
-func (NoopMemoryProvider) Load(ctx context.Context, _ agent.RunRequest, _ agent.AgentProfile) (*MemorySnapshot, error) {
+func (NoopMemoryProvider) Load(ctx context.Context, _ agent.RunRequest, _ agent.AgentProfile) (*agent.MemorySnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return &MemorySnapshot{}, nil
+	return &agent.MemorySnapshot{}, nil
 }
 
 // AppendEvent ignores the event.

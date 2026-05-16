@@ -166,6 +166,13 @@ type AgentContext struct {
 	Trace           []AgentEvent     `json:"trace,omitempty"`
 }
 
+// MemorySnapshot groups memory loaded before planning.
+type MemorySnapshot struct {
+	Working []MemoryItem   `json:"working,omitempty"`
+	Long    []MemoryItem   `json:"long,omitempty"`
+	Shared  map[string]any `json:"shared,omitempty"`
+}
+
 // Usage records resource consumption for one run.
 type Usage struct {
 	PromptTokens     int            `json:"prompt_tokens,omitempty"`
@@ -236,6 +243,8 @@ type Evaluation struct {
 // MemoryItem is a normalized memory record available to the Agent Loop.
 type MemoryItem struct {
 	ID        string         `json:"id,omitempty"`
+	Namespace string         `json:"namespace,omitempty"`
+	Key       string         `json:"key,omitempty"`
 	Type      string         `json:"type,omitempty"`
 	Content   string         `json:"content"`
 	Score     float64        `json:"score,omitempty"`

@@ -27,15 +27,15 @@ func NewStoreBackedMemoryProvider(store Store) *StoreBackedMemoryProvider {
 }
 
 // Load reads working, long, and shared memory using the default key mapping.
-func (p *StoreBackedMemoryProvider) Load(ctx context.Context, req agent.RunRequest, profile agent.AgentProfile) (*MemorySnapshot, error) {
+func (p *StoreBackedMemoryProvider) Load(ctx context.Context, req agent.RunRequest, profile agent.AgentProfile) (*agent.MemorySnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if p.store == nil {
-		return &MemorySnapshot{}, nil
+		return &agent.MemorySnapshot{}, nil
 	}
 
-	snapshot := &MemorySnapshot{}
+	snapshot := &agent.MemorySnapshot{}
 	workingKey := workingKey(req)
 	if workingKey != "" {
 		item, ok, err := p.readItem(ctx, NamespaceWorking, workingKey)
@@ -86,6 +86,8 @@ func (p *StoreBackedMemoryProvider) AppendEvent(ctx context.Context, event agent
 	return p.store.UpdateMemory(ctx, NamespaceWorking, key, map[string]any{
 		"event_type": event.Type,
 		"message":    event.Message,
+		"role":       "system",
+		"content":    eventContent(event),
 		"metadata":   cloneMap(event.Metadata),
 		"updated_at": time.Now().Format(time.RFC3339),
 	})
@@ -107,6 +109,9 @@ func (p *StoreBackedMemoryProvider) WriteRun(ctx context.Context, agentCtx agent
 			"run_id":     req.RunID,
 			"status":     actionStatus(result),
 			"output":     actionOutput(result),
+			"summary":    actionOutput(result),
+			"role":       "assistant",
+			"content":    actionOutput(result),
 			"updated_at": time.Now().Format(time.RFC3339),
 		}); err != nil {
 			return err
@@ -214,6 +219,13 @@ func actionOutput(result *agent.ActionResult) string {
 	return result.Output
 }
 
+func eventContent(event agent.AgentEvent) string {
+	if event.Message != "" {
+		return event.Message
+	}
+	return event.Type
+}
+
 func stringValue(value map[string]any, keys ...string) string {
 	for _, key := range keys {
 		if raw, ok := value[key].(string); ok && raw != "" {
@@ -224,3 +236,4 @@ func stringValue(value map[string]any, keys ...string) string {
 }
 
 var _ Store = (basememory.Memory)(nil)
+var _ agent.LoopMemoryProvider = (*StoreBackedMemoryProvider)(nil)

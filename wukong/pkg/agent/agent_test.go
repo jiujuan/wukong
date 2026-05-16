@@ -203,6 +203,58 @@ func TestAgentLoopReflectRetryLimitReturnsFailedResult(t *testing.T) {
 	}
 }
 
+func TestAgentLoopLoadsMemoryBeforePlanAndWritesRun(t *testing.T) {
+	memory := &recordingLoopMemoryProvider{
+		snapshot: &MemorySnapshot{
+			Working: []MemoryItem{{ID: "working-1", Content: "working memory"}},
+			Long:    []MemoryItem{{ID: "long-1", Content: "long memory"}},
+			Shared:  map[string]any{"shared": "memory"},
+		},
+	}
+	strategy := &memoryRecordingStrategy{}
+	executor := &memoryRecordingExecutor{
+		result: &StepResult{Status: "completed", Output: "done"},
+	}
+	loop := NewAgentLoop(AgentProfile{ID: "agent-1"},
+		WithAgentLoopMemoryProvider(memory),
+		WithAgentLoopStrategy(strategy),
+		WithAgentLoopActionRunner(NewSequentialActionRunner(executor)),
+	)
+
+	result, err := loop.Run(context.Background(), RunRequest{
+		RunID:  "run-1",
+		TaskID: "task-1",
+		Action: "search",
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != string(LoopStatusCompleted) {
+		t.Fatalf("RunResult Status = %q, want completed", result.Status)
+	}
+	if !memory.loadCalled {
+		t.Fatal("memory Load was not called")
+	}
+	if len(strategy.agentCtx.WorkingMemory) != 1 || strategy.agentCtx.WorkingMemory[0].Content != "working memory" {
+		t.Fatalf("strategy WorkingMemory = %#v, want loaded memory", strategy.agentCtx.WorkingMemory)
+	}
+	if len(strategy.agentCtx.LongMemory) != 1 || strategy.agentCtx.LongMemory[0].Content != "long memory" {
+		t.Fatalf("strategy LongMemory = %#v, want loaded memory", strategy.agentCtx.LongMemory)
+	}
+	if strategy.agentCtx.SharedMemory["shared"] != "memory" {
+		t.Fatalf("strategy SharedMemory = %#v, want loaded shared memory", strategy.agentCtx.SharedMemory)
+	}
+	if len(executor.agentCtx.WorkingMemory) != 1 || executor.agentCtx.SharedMemory["shared"] != "memory" {
+		t.Fatalf("executor AgentContext = %#v, want loaded memory", executor.agentCtx)
+	}
+	if !memory.writeCalled || memory.writtenResult == nil || memory.writtenResult.Output != "done" {
+		t.Fatalf("memory WriteRun result = %#v called=%v, want done write", memory.writtenResult, memory.writeCalled)
+	}
+	if memory.writtenEval == nil || !memory.writtenEval.Success {
+		t.Fatalf("memory WriteRun eval = %#v, want successful evaluation", memory.writtenEval)
+	}
+}
+
 type fakePlanExecutor struct {
 	result *StepResult
 	err    error
@@ -296,6 +348,84 @@ func (e *fakePlanExecutor) Execute(_ context.Context, _ AgentContext, step PlanS
 		return &result, e.err
 	}
 	return nil, e.err
+}
+
+type recordingLoopMemoryProvider struct {
+	snapshot *MemorySnapshot
+
+	loadCalled  bool
+	writeCalled bool
+	events      []AgentEvent
+
+	writtenCtx    AgentContext
+	writtenResult *ActionResult
+	writtenEval   *Evaluation
+}
+
+func (p *recordingLoopMemoryProvider) Load(context.Context, RunRequest, AgentProfile) (*MemorySnapshot, error) {
+	p.loadCalled = true
+	return p.snapshot, nil
+}
+
+func (p *recordingLoopMemoryProvider) AppendEvent(_ context.Context, event AgentEvent) error {
+	p.events = append(p.events, event)
+	return nil
+}
+
+func (p *recordingLoopMemoryProvider) WriteRun(_ context.Context, agentCtx AgentContext, result *ActionResult, eval *Evaluation) error {
+	p.writeCalled = true
+	p.writtenCtx = agentCtx
+	p.writtenResult = result
+	p.writtenEval = eval
+	return nil
+}
+
+type memoryRecordingStrategy struct {
+	agentCtx AgentContext
+}
+
+func (s *memoryRecordingStrategy) Name() string {
+	return "memory-recording"
+}
+
+func (s *memoryRecordingStrategy) Plan(_ context.Context, agentCtx AgentContext) (*AgentPlan, error) {
+	s.agentCtx = agentCtx
+	return &AgentPlan{
+		PlanID:   "plan-1",
+		Strategy: s.Name(),
+		Goal:     "test",
+		Steps: []PlanStep{
+			{StepID: "step-1", Type: StepTypeTool, Action: "search", Target: "search"},
+		},
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+func (s *memoryRecordingStrategy) Revise(context.Context, AgentContext, *AgentPlan, *Evaluation) (*AgentPlan, error) {
+	return nil, errors.New("unexpected revise")
+}
+
+type memoryRecordingExecutor struct {
+	agentCtx AgentContext
+	result   *StepResult
+}
+
+func (e *memoryRecordingExecutor) Name() string {
+	return "memory-recording"
+}
+
+func (e *memoryRecordingExecutor) CanExecute(context.Context, AgentContext, PlanStep) bool {
+	return true
+}
+
+func (e *memoryRecordingExecutor) Execute(_ context.Context, agentCtx AgentContext, step PlanStep) (*StepResult, error) {
+	e.agentCtx = agentCtx
+	result := *e.result
+	result.Type = step.Type
+	result.Action = step.Action
+	result.StartedAt = time.Now()
+	result.CompletedAt = time.Now()
+	return &result, nil
 }
 
 type recordingErrorController struct {

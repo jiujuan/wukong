@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jiujuan/wukong/pkg/agent"
+	basememory "github.com/jiujuan/wukong/pkg/memory"
 )
 
 func TestStoreBackedMemoryProviderNilStoreIsSafe(t *testing.T) {
@@ -129,5 +130,41 @@ func TestStoreBackedMemoryProviderWriteRunDoesNotWriteLongOnFailedEvaluation(t *
 	}
 	if store.writtenNamespace != "" || store.writtenKey != "" {
 		t.Fatalf("long write = %s/%s, want none", store.writtenNamespace, store.writtenKey)
+	}
+}
+
+func TestStoreBackedMemoryProviderWritesFieldsConsumedByBaseMemory(t *testing.T) {
+	store := basememory.NewManager(nil, nil)
+	provider := NewStoreBackedMemoryProvider(store)
+	req := agent.RunRequest{
+		RunID:     "run-1",
+		TaskID:    "task-1",
+		UserID:    "user-1",
+		SkillName: "writer",
+		Goal:      "topic-a",
+	}
+
+	err := provider.WriteRun(context.Background(), agent.AgentContext{
+		Request: req,
+		Agent:   agent.AgentProfile{ID: "agent-1"},
+	}, &agent.ActionResult{Status: "completed", Output: "final output"}, &agent.Evaluation{Success: true})
+	if err != nil {
+		t.Fatalf("WriteRun() error = %v", err)
+	}
+
+	working, ok, err := store.ReadMemory(context.Background(), NamespaceWorking, "run-1")
+	if err != nil || !ok {
+		t.Fatalf("working ReadMemory() = %#v, %v, %v; want item", working, ok, err)
+	}
+	if working["summary"] != "final output" {
+		t.Fatalf("working summary = %#v, want final output", working["summary"])
+	}
+
+	long, ok, err := store.ReadMemory(context.Background(), NamespaceLong, "agent-1:writer:topic-a")
+	if err != nil || !ok {
+		t.Fatalf("long ReadMemory() = %#v, %v, %v; want item", long, ok, err)
+	}
+	if long["content"] != "final output" {
+		t.Fatalf("long content = %#v, want final output", long["content"])
 	}
 }
