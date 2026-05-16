@@ -1,6 +1,7 @@
 package agentspec
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,6 +39,25 @@ func (p Parser) ParseFile(path string) (*skillruntime.SkillSpec, error) {
 		return nil, err
 	}
 	return spec, nil
+}
+
+// ParseManifestFile reads only frontmatter and returns a lightweight manifest.
+func (p Parser) ParseManifestFile(path string) (skillruntime.SkillManifest, error) {
+	header, err := readFrontmatterHeader(path)
+	if err != nil {
+		return skillruntime.SkillManifest{}, err
+	}
+
+	var front frontmatter
+	if err := yaml.Unmarshal([]byte(header), &front); err != nil {
+		return skillruntime.SkillManifest{}, fmt.Errorf("parse frontmatter: %w", err)
+	}
+
+	spec := front.toSkillSpec(filepath.Clean(filepath.Dir(path)), "")
+	if err := p.validator.Validate(spec); err != nil {
+		return skillruntime.SkillManifest{}, err
+	}
+	return spec.Manifest, nil
 }
 
 // Parse parses a SKILL.md document from bytes.
@@ -147,6 +167,39 @@ func splitFrontmatter(content string) (string, string, error) {
 	body := rest[end+len("\n---"):]
 	body = strings.TrimPrefix(body, "\n")
 	return header, body, nil
+}
+
+func readFrontmatterHeader(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return "", err
+		}
+		return "", ErrFrontmatterNotFound
+	}
+	first := strings.TrimPrefix(scanner.Text(), "\ufeff")
+	if strings.TrimSpace(first) != "---" {
+		return "", ErrFrontmatterNotFound
+	}
+
+	lines := make([]string, 0)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "---" {
+			return strings.Join(lines, "\n"), nil
+		}
+		lines = append(lines, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	return "", ErrFrontmatterEndNotFound
 }
 
 func splitAllowedTools(value string) []string {

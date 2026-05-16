@@ -89,6 +89,33 @@ Body
 	}
 }
 
+func TestParserParseManifestFileReadsFrontmatterOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, SkillFileName)
+	content := []byte(`---
+name: manifest_only
+description: manifest parsing
+allowed-tools: Read
+---
+
+This body is intentionally not parsed by ParseManifestFile.
+`)
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write SKILL.md error = %v", err)
+	}
+
+	manifest, err := NewParser().ParseManifestFile(path)
+	if err != nil {
+		t.Fatalf("ParseManifestFile() error = %v", err)
+	}
+	if manifest.Name != "manifest_only" {
+		t.Fatalf("Manifest.Name = %q, want manifest_only", manifest.Name)
+	}
+	if manifest.Runtime != RuntimeName {
+		t.Fatalf("Manifest.Runtime = %q, want %q", manifest.Runtime, RuntimeName)
+	}
+}
+
 func TestParserRequiresName(t *testing.T) {
 	_, err := NewParser().Parse("SKILL.md", []byte(`---
 description: missing name
