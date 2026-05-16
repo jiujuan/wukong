@@ -264,8 +264,34 @@ func instructionBlocks(spec *skillruntime.SkillSpec) []skillruntime.ContextBlock
 
 func scanResourceIndex(rootDir string) (scripts, references, assets []skillruntime.SkillResource) {
 	return scanResourceDir(rootDir, "scripts", "script"),
-		scanResourceDir(rootDir, "references", "reference"),
+		scanReferenceResources(rootDir),
 		scanResourceDir(rootDir, "assets", "asset")
+}
+
+func scanReferenceResources(rootDir string) []skillruntime.SkillResource {
+	entries := scanResourceDir(rootDir, "references", "reference")
+	rootEntries, err := os.ReadDir(rootDir)
+	if err != nil {
+		return entries
+	}
+	for _, entry := range rootEntries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.EqualFold(name, SkillFileName) || !strings.EqualFold(filepath.Ext(name), ".md") {
+			continue
+		}
+		entries = append(entries, skillruntime.SkillResource{
+			Kind: "reference",
+			Name: name,
+			Path: filepath.ToSlash(name),
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Path < entries[j].Path
+	})
+	return entries
 }
 
 func scanResourceDir(rootDir, dirName, kind string) []skillruntime.SkillResource {
