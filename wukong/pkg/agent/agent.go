@@ -131,14 +131,6 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 		return buildRunResult(state), nil
 	}
 
-	decision, err := l.controller.BeforeIteration(ctx, state)
-	if err != nil {
-		return nil, err
-	}
-	if decision != nil && decision.Stop {
-		return buildRunResult(state), nil
-	}
-
 	state.Phase = LoopPhasePlan
 	plan, err := l.strategy.Plan(ctx, state.AgentContext)
 	if err != nil {
@@ -146,26 +138,62 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 	}
 	state.Plan = planToMap(plan)
 
-	state.Phase = LoopPhaseAct
-	actionResult, err := l.actionRun.RunPlan(ctx, state.AgentContext, plan)
-	if err != nil {
+	retries := 0
+	maxRetries := l.maxReflectRetries()
+	for {
+		decision, err := l.controller.BeforeIteration(ctx, state)
+		if err != nil {
+			return nil, err
+		}
+		if decision != nil && decision.Stop {
+			return buildRunResult(state), nil
+		}
+
+		state.Phase = LoopPhaseAct
+		actionResult, err := l.actionRun.RunPlan(ctx, state.AgentContext, plan)
 		state.ActionResult = actionResult
 		if actionResult != nil {
 			state.StepResults = stepResultsToLoopSteps(actionResult.StepResults)
 		}
-		return l.handleLoopError(ctx, state, err)
-	}
-	state.ActionResult = actionResult
-	if actionResult != nil {
-		state.StepResults = stepResultsToLoopSteps(actionResult.StepResults)
-	}
+		if err != nil {
+			return l.handleLoopError(ctx, state, err)
+		}
 
-	state.Phase = LoopPhaseReflect
-	evaluation, err := l.reflector.Reflect(ctx, state.AgentContext, plan, actionResult, nil)
-	if err != nil {
-		return l.handleLoopError(ctx, state, err)
+		state.Phase = LoopPhaseReflect
+		evaluation, err := l.reflector.Reflect(ctx, state.AgentContext, plan, actionResult, nil)
+		if err != nil {
+			return l.handleLoopError(ctx, state, err)
+		}
+		state.Evaluation = evaluation
+
+		if evaluation == nil || !evaluation.Retry {
+			break
+		}
+		if retries >= maxRetries {
+			state.Status = LoopStatusFailed
+			state.LastError = "reflect retry limit exceeded"
+			if _, err := l.controller.AfterIteration(ctx, state); err != nil {
+				return nil, err
+			}
+			if err := l.saveCheckpoint(ctx, state); err != nil {
+				return nil, err
+			}
+			return buildRunResult(state), nil
+		}
+		retries++
+		ensureLoopMetadata(state)["reflect_retry_count"] = retries
+		if _, err := l.controller.AfterIteration(ctx, state); err != nil {
+			return nil, err
+		}
+
+		state.Phase = LoopPhasePlan
+		revised, err := l.strategy.Revise(ctx, state.AgentContext, plan, evaluation)
+		if err != nil {
+			return l.handleLoopError(ctx, state, err)
+		}
+		plan = revised
+		state.Plan = planToMap(plan)
 	}
-	state.Evaluation = evaluation
 
 	state.Phase = LoopPhaseLearn
 	state.Status = LoopStatusCompleted
@@ -176,6 +204,16 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 		return nil, err
 	}
 	return buildRunResult(state), nil
+}
+
+func (l *AgentLoop) maxReflectRetries() int {
+	if l.profile.Reflection.MaxRetries > 0 {
+		return l.profile.Reflection.MaxRetries
+	}
+	if l.profile.Reasoning.MaxRetries > 0 {
+		return l.profile.Reasoning.MaxRetries
+	}
+	return 1
 }
 
 func (l *AgentLoop) handleLoopError(ctx context.Context, state *LoopState, err error) (*RunResult, error) {

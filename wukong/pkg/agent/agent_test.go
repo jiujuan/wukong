@@ -127,6 +127,79 @@ func TestAgentLoopCallsReflector(t *testing.T) {
 	}
 }
 
+func TestAgentLoopReflectRetryRevisesPlanThenSucceeds(t *testing.T) {
+	strategy := &recordingReviseStrategy{}
+	runner := &sequencePlanRunner{
+		results: []*ActionResult{
+			{Status: "completed"},
+			{Status: "completed", Output: "done"},
+		},
+	}
+	reflector := &outputRetryReflector{}
+	loop := NewAgentLoop(AgentProfile{
+		ID:         "agent-1",
+		Reflection: ReflectConfig{MaxRetries: 1},
+	},
+		WithAgentLoopStrategy(strategy),
+		WithAgentLoopActionRunner(runner),
+		WithAgentLoopReflector(reflector),
+	)
+
+	result, err := loop.Run(context.Background(), RunRequest{
+		RunID:  "run-1",
+		TaskID: "task-1",
+		Action: "search",
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != string(LoopStatusCompleted) || result.Output != "done" {
+		t.Fatalf("RunResult = %#v, want completed done", result)
+	}
+	if strategy.reviseCalls != 1 {
+		t.Fatalf("Revise calls = %d, want 1", strategy.reviseCalls)
+	}
+	if runner.calls != 2 || reflector.calls != 2 {
+		t.Fatalf("runner calls = %d reflector calls = %d, want 2 each", runner.calls, reflector.calls)
+	}
+}
+
+func TestAgentLoopReflectRetryLimitReturnsFailedResult(t *testing.T) {
+	strategy := &recordingReviseStrategy{}
+	runner := &sequencePlanRunner{
+		results: []*ActionResult{
+			{Status: "completed"},
+			{Status: "completed"},
+		},
+	}
+	loop := NewAgentLoop(AgentProfile{
+		ID:         "agent-1",
+		Reflection: ReflectConfig{MaxRetries: 1},
+	},
+		WithAgentLoopStrategy(strategy),
+		WithAgentLoopActionRunner(runner),
+		WithAgentLoopReflector(&outputRetryReflector{}),
+	)
+
+	result, err := loop.Run(context.Background(), RunRequest{
+		RunID:  "run-1",
+		TaskID: "task-1",
+		Action: "search",
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != string(LoopStatusFailed) {
+		t.Fatalf("RunResult Status = %q, want failed", result.Status)
+	}
+	if result.Error != "reflect retry limit exceeded" {
+		t.Fatalf("RunResult Error = %q, want retry limit exceeded", result.Error)
+	}
+	if strategy.reviseCalls != 1 {
+		t.Fatalf("Revise calls = %d, want 1", strategy.reviseCalls)
+	}
+}
+
 type fakePlanExecutor struct {
 	result *StepResult
 	err    error
@@ -141,6 +214,64 @@ type recordingReflector struct {
 func (r *recordingReflector) Reflect(context.Context, AgentContext, *AgentPlan, *ActionResult, error) (*Evaluation, error) {
 	r.called = true
 	return r.evaluation, nil
+}
+
+type outputRetryReflector struct {
+	calls int
+}
+
+func (r *outputRetryReflector) Reflect(_ context.Context, _ AgentContext, _ *AgentPlan, result *ActionResult, _ error) (*Evaluation, error) {
+	r.calls++
+	if result == nil || result.Output == "" {
+		return &Evaluation{Success: false, Score: 0, Reason: "empty action output", Retry: true}, nil
+	}
+	return &Evaluation{Success: true, Score: 1, Reason: "output accepted"}, nil
+}
+
+type recordingReviseStrategy struct {
+	reviseCalls int
+}
+
+func (s *recordingReviseStrategy) Name() string {
+	return "recording"
+}
+
+func (s *recordingReviseStrategy) Plan(context.Context, AgentContext) (*AgentPlan, error) {
+	return &AgentPlan{
+		PlanID:   "plan-1",
+		Strategy: s.Name(),
+		Goal:     "test",
+		Steps: []PlanStep{
+			{StepID: "step-1", Type: StepTypeTool, Action: "search", Target: "search"},
+		},
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+func (s *recordingReviseStrategy) Revise(ctx context.Context, agentCtx AgentContext, previous *AgentPlan, _ *Evaluation) (*AgentPlan, error) {
+	s.reviseCalls++
+	revised := previous.Clone()
+	revised.PlanID = previous.PlanID + "-revised"
+	revised.CreatedAt = time.Now()
+	return &revised, nil
+}
+
+type sequencePlanRunner struct {
+	results []*ActionResult
+	calls   int
+}
+
+func (r *sequencePlanRunner) RunPlan(context.Context, AgentContext, *AgentPlan) (*ActionResult, error) {
+	index := r.calls
+	r.calls++
+	if index >= len(r.results) {
+		return &ActionResult{Status: "completed"}, nil
+	}
+	result := *r.results[index]
+	if result.Output != "" && len(result.StepResults) == 0 {
+		result.StepResults = []StepResult{{Status: "completed", Output: result.Output}}
+	}
+	return &result, nil
 }
 
 func (e *fakePlanExecutor) Name() string {
