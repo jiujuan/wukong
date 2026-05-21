@@ -49,6 +49,8 @@ skills/
 
 .codex
 
+*.zip
+
 
 wukong/storage/output_data/*
 

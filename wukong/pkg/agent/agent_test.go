@@ -64,6 +64,36 @@ func TestAgentLoopActionErrorGoesThroughController(t *testing.T) {
 	}
 }
 
+func TestAgentLoopRetryableActionErrorRetries(t *testing.T) {
+	wantErr := errors.New("temporary action failure")
+	executor := &flakyPlanExecutor{
+		err: wantErr,
+		result: &StepResult{
+			Status: "completed",
+			Output: "done after retry",
+		},
+	}
+	loop := NewAgentLoop(AgentProfile{ID: "agent-1"},
+		WithAgentLoopController(NewDefaultLoopController(WithMaxRetries(1))),
+		WithAgentLoopActionRunner(NewSequentialActionRunner(executor)),
+	)
+
+	result, err := loop.Run(context.Background(), RunRequest{
+		RunID:  "run-1",
+		TaskID: "task-1",
+		Action: "search",
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v, want retry success", err)
+	}
+	if executor.calls != 2 {
+		t.Fatalf("executor calls = %d, want 2", executor.calls)
+	}
+	if result.Status != string(LoopStatusCompleted) || result.Output != "done after retry" {
+		t.Fatalf("RunResult = %#v, want completed retry output", result)
+	}
+}
+
 func TestAgentLoopMaxIterationStop(t *testing.T) {
 	loop := NewAgentLoop(AgentProfile{ID: "agent-1"},
 		WithAgentLoopController(&stopBeforeIterationController{}),
@@ -261,6 +291,12 @@ type fakePlanExecutor struct {
 	step   PlanStep
 }
 
+type flakyPlanExecutor struct {
+	err    error
+	result *StepResult
+	calls  int
+}
+
 type recordingReflector struct {
 	called     bool
 	evaluation *Evaluation
@@ -348,6 +384,27 @@ func (e *fakePlanExecutor) Execute(_ context.Context, _ AgentContext, step PlanS
 		return &result, e.err
 	}
 	return nil, e.err
+}
+
+func (e *flakyPlanExecutor) Name() string {
+	return "flaky"
+}
+
+func (e *flakyPlanExecutor) CanExecute(context.Context, AgentContext, PlanStep) bool {
+	return true
+}
+
+func (e *flakyPlanExecutor) Execute(_ context.Context, _ AgentContext, step PlanStep) (*StepResult, error) {
+	e.calls++
+	if e.calls == 1 {
+		return nil, e.err
+	}
+	result := *e.result
+	result.Type = step.Type
+	result.Action = step.Action
+	result.StartedAt = time.Now()
+	result.CompletedAt = time.Now()
+	return &result, nil
 }
 
 type recordingLoopMemoryProvider struct {

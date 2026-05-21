@@ -105,6 +105,116 @@ func TestResumeContinuesFromStepCursorWithoutRepeatingCompletedStep(t *testing.T
 	}
 }
 
+func TestResumeReflectRetryRevisesRemainingPlanThenSucceeds(t *testing.T) {
+	ctx := context.Background()
+	store := NewInMemoryCheckpointStore()
+	runner := &sequencePlanRunner{
+		results: []*ActionResult{
+			{Status: "completed"},
+			{Status: "completed", Output: "second done"},
+		},
+	}
+	strategy := &recordingReviseStrategy{}
+	loop := NewAgentLoop(AgentProfile{
+		ID:         AgentID("agent-1"),
+		Reflection: ReflectConfig{MaxRetries: 1},
+	},
+		WithAgentLoopCheckpointStore(store),
+		WithAgentLoopStrategy(strategy),
+		WithAgentLoopActionRunner(runner),
+		WithAgentLoopReflector(&outputRetryReflector{}),
+	)
+	plan := twoStepResumePlan()
+	state := &LoopState{
+		RunID:        "run-1",
+		Phase:        LoopPhasePaused,
+		Request:      RunRequest{RunID: "run-1", TaskID: "task-1", Action: "first"},
+		Agent:        AgentProfile{ID: AgentID("agent-1")},
+		AgentContext: AgentContext{Request: RunRequest{RunID: "run-1", TaskID: "task-1", Action: "first"}},
+		Plan:         planToMap(plan),
+		AgentPlan:    plan,
+		StepCursor:   1,
+		StepResults: []LoopStep{
+			{Index: 0, Type: string(StepTypeTool), Action: "first", Status: "completed", Output: "first done"},
+		},
+		Status: LoopStatusPaused,
+	}
+
+	result, err := loop.Resume(ctx, state, nil)
+	if err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if result.Status != string(LoopStatusCompleted) || result.Output != "second done" {
+		t.Fatalf("RunResult = %#v, want completed second done", result)
+	}
+	if runner.calls != 2 {
+		t.Fatalf("runner calls = %d, want 2", runner.calls)
+	}
+	if strategy.reviseCalls != 1 {
+		t.Fatalf("Revise calls = %d, want 1", strategy.reviseCalls)
+	}
+}
+
+func TestResumeRejectsNegativeStepCursor(t *testing.T) {
+	ctx := context.Background()
+	loop := NewAgentLoop(AgentProfile{ID: AgentID("agent-1")})
+	plan := twoStepResumePlan()
+	state := &LoopState{
+		RunID:        "run-1",
+		Phase:        LoopPhasePaused,
+		Request:      RunRequest{RunID: "run-1", TaskID: "task-1", Action: "first"},
+		Agent:        AgentProfile{ID: AgentID("agent-1")},
+		AgentContext: AgentContext{Request: RunRequest{RunID: "run-1", TaskID: "task-1", Action: "first"}},
+		Plan:         planToMap(plan),
+		AgentPlan:    plan,
+		StepCursor:   -1,
+		Status:       LoopStatusPaused,
+	}
+
+	_, err := loop.Resume(ctx, state, nil)
+	if err == nil {
+		t.Fatal("Resume() error = nil, want invalid step cursor error")
+	}
+}
+
+func TestResumeAlreadyCompleteWritesMemoryAndCompletionEvent(t *testing.T) {
+	ctx := context.Background()
+	memory := &recordingLoopMemoryProvider{}
+	loop := NewAgentLoop(AgentProfile{ID: AgentID("agent-1")},
+		WithAgentLoopMemoryProvider(memory),
+	)
+	plan := twoStepResumePlan()
+	state := &LoopState{
+		RunID:        "run-1",
+		Phase:        LoopPhasePaused,
+		Request:      RunRequest{RunID: "run-1", TaskID: "task-1", Action: "first"},
+		Agent:        AgentProfile{ID: AgentID("agent-1")},
+		AgentContext: AgentContext{Request: RunRequest{RunID: "run-1", TaskID: "task-1", Action: "first"}},
+		Plan:         planToMap(plan),
+		AgentPlan:    plan,
+		StepCursor:   len(plan.Steps),
+		StepResults: []LoopStep{
+			{Index: 0, Type: string(StepTypeTool), Action: "first", Status: "completed", Output: "first done"},
+			{Index: 1, Type: string(StepTypeTool), Action: "second", Status: "completed", Output: "second done"},
+		},
+		Status: LoopStatusPaused,
+	}
+
+	result, err := loop.Resume(ctx, state, nil)
+	if err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if result.Status != string(LoopStatusCompleted) {
+		t.Fatalf("RunResult Status = %q, want completed", result.Status)
+	}
+	if !memory.writeCalled {
+		t.Fatal("memory WriteRun was not called")
+	}
+	if len(memory.events) != 1 || memory.events[0].Type != "run_completed" {
+		t.Fatalf("memory events = %#v, want run_completed", memory.events)
+	}
+}
+
 type resumeLoopFactory struct {
 	executor PlanActionExecutor
 	store    CheckpointStore
