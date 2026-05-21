@@ -158,14 +158,13 @@ func (l *AgentLoop) Run(ctx context.Context, req RunRequest) (*RunResult, error)
 planAttempt:
 	state.Phase = LoopPhasePlan
 	plan, err := l.strategy.Plan(ctx, state.AgentContext)
-	if err != nil {
-		result, err, retry := l.handleLoopError(ctx, state, err)
-		if retry {
-			goto planAttempt
-		}
+	result, err, retry := l.handleLoopOperationError(ctx, state, err)
+	if retry {
+		goto planAttempt
+	}
+	if result != nil || err != nil {
 		return result, err
 	}
-	state.LastError = ""
 	state.Plan = planToMap(plan)
 	state.AgentPlan = cloneAgentPlanPtr(plan)
 
@@ -187,25 +186,23 @@ planAttempt:
 			state.StepResults = stepResultsToLoopSteps(actionResult.StepResults)
 			state.StepCursor = stepCursorFromStepResults(actionResult.StepResults)
 		}
-		if err != nil {
-			result, err, retry := l.handleLoopError(ctx, state, err)
-			if retry {
-				continue
-			}
+		result, err, retry := l.handleLoopOperationError(ctx, state, err)
+		if retry {
+			continue
+		}
+		if result != nil || err != nil {
 			return result, err
 		}
-		state.LastError = ""
 
 		state.Phase = LoopPhaseReflect
 		evaluation, err := l.reflector.Reflect(ctx, state.AgentContext, plan, actionResult, nil)
-		if err != nil {
-			result, err, retry := l.handleLoopError(ctx, state, err)
-			if retry {
-				continue
-			}
+		result, err, retry = l.handleLoopOperationError(ctx, state, err)
+		if retry {
+			continue
+		}
+		if result != nil || err != nil {
 			return result, err
 		}
-		state.LastError = ""
 		state.Evaluation = evaluation
 
 		if evaluation == nil || !evaluation.Retry {
@@ -233,14 +230,13 @@ planAttempt:
 
 		state.Phase = LoopPhasePlan
 		revised, err := l.strategy.Revise(ctx, state.AgentContext, plan, evaluation)
-		if err != nil {
-			result, err, retry := l.handleLoopError(ctx, state, err)
-			if retry {
-				continue
-			}
+		result, err, retry = l.handleLoopOperationError(ctx, state, err)
+		if retry {
+			continue
+		}
+		if result != nil || err != nil {
 			return result, err
 		}
-		state.LastError = ""
 		plan = revised
 		state.Plan = planToMap(plan)
 		state.AgentPlan = cloneAgentPlanPtr(plan)
@@ -313,26 +309,24 @@ func (l *AgentLoop) Resume(ctx context.Context, state *LoopState, decision *Loop
 			}
 			state.StepCursor = baseCursor + stepCursorFromStepResults(actionResult.StepResults)
 		}
-		if err != nil {
-			result, err, retry := l.handleLoopError(ctx, state, err)
-			if retry {
-				continue
-			}
+		result, err, retry := l.handleLoopOperationError(ctx, state, err)
+		if retry {
+			continue
+		}
+		if result != nil || err != nil {
 			return result, err
 		}
-		state.LastError = ""
 		state.StepCursor = len(plan.Steps)
 
 		state.Phase = LoopPhaseReflect
 		evaluation, err := l.reflector.Reflect(ctx, state.AgentContext, plan, actionResult, nil)
-		if err != nil {
-			result, err, retry := l.handleLoopError(ctx, state, err)
-			if retry {
-				continue
-			}
+		result, err, retry = l.handleLoopOperationError(ctx, state, err)
+		if retry {
+			continue
+		}
+		if result != nil || err != nil {
 			return result, err
 		}
-		state.LastError = ""
 		state.Evaluation = evaluation
 		if evaluation == nil || !evaluation.Retry {
 			break
@@ -352,14 +346,13 @@ func (l *AgentLoop) Resume(ctx context.Context, state *LoopState, decision *Loop
 		ensureLoopMetadata(state)["reflect_retry_count"] = retries
 		state.Phase = LoopPhasePlan
 		revised, err := l.strategy.Revise(ctx, state.AgentContext, plan, evaluation)
-		if err != nil {
-			result, err, retry := l.handleLoopError(ctx, state, err)
-			if retry {
-				continue
-			}
+		result, err, retry = l.handleLoopOperationError(ctx, state, err)
+		if retry {
+			continue
+		}
+		if result != nil || err != nil {
 			return result, err
 		}
-		state.LastError = ""
 		plan = revised
 		state.AgentPlan = cloneAgentPlanPtr(plan)
 		state.Plan = planToMap(plan)
@@ -413,6 +406,14 @@ func completedLoopStepsForCursor(steps []LoopStep, cursor int) []LoopStep {
 		cursor = len(steps)
 	}
 	return cloneLoopSteps(steps[:cursor])
+}
+
+func (l *AgentLoop) handleLoopOperationError(ctx context.Context, state *LoopState, err error) (*RunResult, error, bool) {
+	if err == nil {
+		state.LastError = ""
+		return nil, nil, false
+	}
+	return l.handleLoopError(ctx, state, err)
 }
 
 func (l *AgentLoop) handleLoopError(ctx context.Context, state *LoopState, err error) (*RunResult, error, bool) {
